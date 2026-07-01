@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coord-reconcile"
+dynamic = ["version"]
+description = "L1 of coord2 — heal a fulcra-agent-teams namespace's OKF indexes and serve queryable views"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+# stdlib-only runtime (transport is a CLI-subprocess call to `fulcra-api`); no runtime deps.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+coord-reconcile = "coord_reconcile.cli:main"
+
+[tool.hatch.version]
+path = "coord_reconcile/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["coord_reconcile"]
