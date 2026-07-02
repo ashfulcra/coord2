@@ -98,3 +98,29 @@ rehearsal: `--dry-run` + `--no-mark` first on a scratch team.
    ~140 docs; exporter is sequential (no concurrency-ceiling collision).
 7. **Phase-3 gate additions:** no open review loop on the incumbent; forge/verdict pollers stopped;
    "active host" freshness window > slowest machine-gated host cadence.
+
+---
+
+## Phase 1 — EXECUTED 2026-07-02 ✅
+- Rehearsal (scratch, 3 tasks, --no-mark): field fidelity verified, incumbent untouched.
+- Dry-run: 139-task plan (surfaced + fixed a slug-length bug before live).
+- **LIVE: 139/139 migrated, 139/139 terminalized on the incumbent, 0 errors** (12 min sequential).
+- First reconcile: 139 tasks, 0 warnings. Status counts match the incumbent structure exactly.
+- Acceptance: identity-inbox ✅ (same-id policy works), dual-listing NEGATIVE ✅ (only review-loop items
+  remain open on the incumbent — carve-out intact), directive round-trip ✅, presence/briefing/digest/
+  health ✅. Heartbeat (20m) + listener (10m) installed on Ashs-MBP-Work, install self-tests OK.
+- Incumbent automation on this host left RUNNING (review loops + fleet still live there).
+
+## Phase 2 — per-host adoption checklist (operator-gated, run when touching each machine)
+For each of: Mac, Workbook (Codex review), ArcBot, codex hosts:
+1. `git clone https://github.com/ashfulcra/coord2 && cd coord2 && scripts/coord2-setup.sh --yes`
+2. `coord-engine doctor fulcra` (must be healthy; fulcra-api auth if not)
+3. `scripts/install-heartbeat.sh --yes fulcra 20` + `scripts/install-listener.sh --yes fulcra <agent-id> 10`
+4. `coord-engine presence beat fulcra -a <agent-id>` (join the roster)
+5. Retire that host's incumbent launchd jobs (com.fulcra.coord.*) ONLY once its open review loops close.
+6. Workbook (reviewer) last: its verdict flow drains the remaining incumbent review loops first.
+
+## Phase 3 — retirement gate (from Resolution §7)
+All active hosts fresh in `coord-engine health fulcra`; incumbent board has NO open work AND no open
+review loops; forge/verdict pollers stopped; final incumbent broadcast + freeze; /coordination/ kept as
+cold read-only history.
