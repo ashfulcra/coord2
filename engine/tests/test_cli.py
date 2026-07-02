@@ -1,6 +1,6 @@
 import json
 
-from coord_reconcile import cli
+from coord_engine import cli
 from tests.test_reconcile import FakeTransport, _task
 
 
@@ -44,3 +44,29 @@ def test_cli_status_no_aggregate_hint(capsys):
     t = FakeTransport()
     assert cli.main(["status", "empty"], transport=t) == 0
     assert "run `reconcile` first" in capsys.readouterr().out
+
+
+def _now_iso():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def test_cli_roles_status_held(capsys):
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md", "---\ntype: Role\npolicy: shared\nsla_hours: 24\n---\n")
+    t.put("team/r/roles/reviewer/leases/ash.md",
+          f"---\ntype: Lease\nagent: ash\ntimestamp: {_now_iso()}\n---\n")
+    assert cli.main(["roles", "status", "r", "reviewer"], transport=t) == 0
+    assert "HELD" in capsys.readouterr().out
+
+
+def test_cli_roles_status_vacant_escalation_due(capsys):
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md", "---\ntype: Role\nsla_hours: 24\n---\n")
+    t.put("team/r/roles/reviewer/leases/ash.md",
+          "---\ntype: Lease\nagent: ash\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
+    assert cli.main(["roles", "status", "r", "reviewer", "--json"], transport=t) == 0
+    import json as _json
+    res = _json.loads(capsys.readouterr().out)
+    assert res["status"] == "VACANT"
+    assert res["escalation_due"] is True
