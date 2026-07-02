@@ -44,3 +44,11 @@ def test_latest_tiebreak_deterministic():
     b = {"created_at": NOW, "checkpoint_id": "CHK-b", "objective": "B"}
     assert continuity.latest([a, b])["objective"] == "B"
     assert continuity.latest([b, a])["objective"] == "B"
+
+
+def test_latest_ignores_malformed_created_at():
+    # a corrupt snapshot must not shadow valid ones (lexical 'n' > '2')
+    good = {"created_at": "2026-07-01T10:00:00Z", "checkpoint_id": "CHK-g", "objective": "good"}
+    corrupt = {"created_at": "not-a-date", "checkpoint_id": "CHK-x", "objective": "bad"}
+    assert continuity.latest([good, corrupt])["objective"] == "good"
+    assert continuity.latest([corrupt]) is None
