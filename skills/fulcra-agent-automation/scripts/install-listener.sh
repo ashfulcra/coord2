@@ -15,6 +15,9 @@ while [[ "$#" -gt 0 ]]; do
     --yes) YES=1;;
     --uninstall) UNINSTALL=1;;
     --wake-cmd) WAKE_CMD="${2:?--wake-cmd needs a command}"
+                case "$WAKE_CMD" in *$'\n'*|*$'\r'*)
+                  echo "error: --wake-cmd must be one line" >&2; exit 2;;
+                esac
                 case "$WAKE_CMD" in *"'"*|*"<"*|*">"*)
                   echo "error: --wake-cmd may not contain single quotes or angle brackets" >&2; exit 2;;
                 esac; shift;;
