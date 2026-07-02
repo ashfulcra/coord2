@@ -67,6 +67,39 @@ the `fulcra-agent-reconcile` skill. The first-draft `fulcra-agent-roles` SKILL.m
 
 ## Recommendation
 **Approach C.** Skills for interface + adoption + upstream; one shared tested engine for every stateful
-fold. Build order: seed `engine/` from reconcile → `fulcra-agent-reconcile` skill → `fulcra-agent-roles`
-(with the fold as an engine command) → tasks → review → continuity → automation, each PR reviewed on the
-bus (Codex) + an independent pass.
+fold.
+
+---
+
+## Resolution (validated 2026-07-01, after review)
+
+Two reviews (independent opus + Codex on the bus) + a probe of the real `fulcradynamics/agent-skills`
+distribution model resolved the open questions:
+
+- **Q2 (how the engine ships) — RESOLVED: a standalone published tool, `coord-engine`, invoked via
+  `uv tool run coord-engine <verb>`.** The probe found the upstream skills repo has **zero
+  pyproject/wheels/pip** — skills that ship code bundle *loose scripts* run by relative path, and they
+  invoke shared tools (`fulcra-api`) as an **external command** (`uv tool run fulcra-api`). So neither a
+  per-skill wheel dep (opus's first instinct) nor a bundled-under-one-skill package (the initial tree)
+  matches upstream. The fit is the **`fulcra-api` pattern**: one standalone versioned tool, skills stay
+  **pure prose + references** that call it — fully upstreamable (identical shape to `fulcra-agent-teams`).
+  → engine extracted to top-level `engine/` as `coord-engine`; skills carry no code.
+- **Q3 (prose↔tool line) — SHARPENED.** The discriminator isn't only "fold vs single-file" but **"does
+  correctness require agreement between writers/readers on a derived representation?"** The role
+  HELD/VACANT/CONTESTED + SLA fold is single-reader yet must be deterministic (two agents must agree a
+  role is vacant before one escalates) → it is now a `coord-engine roles status` command, not prose.
+  Single-file, single-writer actions (write a task doc, refresh a lease, drop an inbox message, write the
+  escalation marker) stay prose. Engine *decides* escalation (`escalation_due`); the skill *acts*.
+- **Q4 (engine-owned index in a hand-edited space) — GUARDRAILED.** `coord-engine` now writes an in-band
+  `<!-- ENGINE-OWNED … -->` banner into generated `index.md`/`log.md`, so a hand-editing agent sees the
+  boundary in the file, not only in a SKILL.md. Task docs remain hand-editable; only the derived index is
+  engine-owned (interop with vanilla teams preserved for the data).
+- **Q5 (can a skill run a tool in-runtime) — the real foundation, now answered by Q2's resolution.** By
+  shipping the engine as an external `uv tool run` tool (not a bundled wheel), the skill's runtime
+  contract is exactly `fulcra-agent-teams`' — it already assumes `uv tool run fulcra-api`. No new
+  assumption.
+
+**Build order (revised):** seed `engine/` from reconcile ✅ → add the roles fold as a `coord-engine`
+command ✅ → thin prose skills (`fulcra-agent-reconcile`, `fulcra-agent-roles`) invoking `uv tool run
+coord-engine` ✅ → tasks → review → continuity → automation, each PR reviewed on the bus (Codex) + an
+independent pass.

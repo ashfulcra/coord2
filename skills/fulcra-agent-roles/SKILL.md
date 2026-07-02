@@ -67,17 +67,23 @@ The Fulcra File Store versions every write, so the lease's history is an audit t
 Delete your lease file `roles/<name>/leases/<your-agent-name>.md`. (Delete is not undoable via the CLI,
 which is correct here — releasing is intentional.)
 
-### Determine role status (the fold)
-List `roles/<name>/leases/` and read each lease's `timestamp`:
-- **HELD** — at least one lease refreshed within the freshness window (default: 24h, or `sla_hours`).
-- **VACANT** — no fresh lease.
-- **CONTESTED** — policy is `exclusive` and two or more leases are fresh. Resolve by having all but one
-  holder release.
+### Determine role status (the fold) — **use the engine, do not eyeball timestamps**
+Classifying a role from many lease files is a *fold* over derived state: two agents must AGREE on
+whether a role is vacant before one escalates. Eyeballing timestamps drifts (the exact failure coord
+exists to prevent), so this is a deterministic **`coord-engine`** command, not a prose instruction:
+```bash
+uv tool run coord-engine roles status <team> <role> --json
+```
+It reads the role's `policy`/`sla_hours`, folds the leases, and returns:
+- `status` — **HELD** (≥1 fresh lease) / **VACANT** (none) / **CONTESTED** (`exclusive` + ≥2 fresh) / **UNKNOWN** (unreadable),
+- `fresh_holders`, and `escalation_due` (true iff vacant past SLA and today's marker isn't present).
 
-### Escalate a vacancy
-When you observe a role is **VACANT** longer than its `sla_hours` and today's
-`roles/<name>/escalations/<date>.md` marker does not yet exist:
-1. Write the marker (first-writer-wins — if the upload races, that's fine; the marker just dedupes).
+For **CONTESTED**, resolve by having all but one holder release.
+
+### Escalate a vacancy — engine decides, you act
+The engine already computed `escalation_due` above. When it is **true**, perform the single-file actions
+(these are reliable as prose):
+1. Write today's dedupe marker `roles/<name>/escalations/<date>.md` (first-writer-wins).
 2. Drop a message into the maintainer's inbox
    (`team/<team>/member/<maintainer>/inbox/<YYYYMMDD-HHMMSS>_<you>_role-vacant-<name>.md`) per the
    `fulcra-agent-teams` inbox lifecycle, stating which role is vacant and for how long.

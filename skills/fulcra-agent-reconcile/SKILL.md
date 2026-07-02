@@ -59,10 +59,12 @@ them; edit task *content* docs, not the indexes. `_coord/summaries.json` is a ca
 reproduces it). Recoverable archival is **move-not-delete** (Fulcra `file delete` isn't CLI-undoable).
 
 ## Usage
-See [`references/reconcile-cli.md`](references/reconcile-cli.md) for exact commands. In short (needs
-`fulcra-api` authenticated):
+This skill drives the shared **`coord-engine`** tool — invoked the same way this ecosystem already
+invokes `fulcra-api` (`uv tool run …`), so the skill itself stays pure prose + references (no bundled
+code). Needs `fulcra-api` authenticated and `coord-engine` installed (`uv tool install coord-engine`, or
+from source: `uv tool install <coord2>/engine`). See [`references/reconcile-cli.md`](references/reconcile-cli.md).
 ```bash
-uv run --project skills/fulcra-agent-reconcile coord-reconcile reconcile <team>
-uv run --project skills/fulcra-agent-reconcile coord-reconcile board    <team>
-uv run --project skills/fulcra-agent-reconcile coord-reconcile needs-me <team> --agent <id>
+uv tool run coord-engine reconcile <team>            # scan + heal index/log + write the aggregate
+uv tool run coord-engine board    <team>
+uv tool run coord-engine needs-me <team> --agent <id>
 ```

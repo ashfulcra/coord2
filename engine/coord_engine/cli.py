@@ -1,10 +1,11 @@
-"""CLI for coord-reconcile (L1).
+"""CLI for coord-engine — the shared coord2 engine.
 
-    coord-reconcile reconcile <team>
-    coord-reconcile status    <team> [--json]
-    coord-reconcile board     <team> [--json]
-    coord-reconcile needs-me  <team> --agent <id> [--json]
-    coord-reconcile search    <team> <query> [--json]
+    coord-engine reconcile <team>
+    coord-engine status    <team> [--json]
+    coord-engine board     <team> [--json]
+    coord-engine needs-me  <team> --agent <id> [--json]
+    coord-engine search    <team> <query> [--json]
+    coord-engine roles status <team> <role> [--json]
 
 Command functions take an injected ``transport`` so they're testable without the
 network; ``main`` builds the real ``FulcraFileTransport``.
@@ -20,9 +21,9 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, query
+from . import aggregate, okf, query, roles
 from . import reconcile as rec
-from .transport import FulcraFileTransport
+from .transport import FulcraFileTransport, TransportError
 
 __all__ = ["main"]
 
@@ -127,8 +128,64 @@ def cmd_search(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- roles (fulcra-agent-roles fold) ---
+
+def _role_doc_path(team: str, role: str) -> str:
+    return f"team/{team}/roles/{role}.md"
+
+
+def _leases_prefix(team: str, role: str) -> str:
+    return f"team/{team}/roles/{role}/leases/"
+
+
+def _escalation_marker_path(team: str, role: str, date: str) -> str:
+    return f"team/{team}/roles/{role}/escalations/{date}.md"
+
+
+def cmd_roles_status(args: argparse.Namespace, transport: Any) -> int:
+    team, role = args.team, args.role
+    now = _iso(_now())
+    reg = okf.parse_frontmatter(transport.read(_role_doc_path(team, role))) or {}
+    policy = reg.get("policy") or "shared"
+    try:
+        sla = float(reg.get("sla_hours") or roles.DEFAULT_SLA_HOURS)
+    except (TypeError, ValueError):
+        sla = roles.DEFAULT_SLA_HOURS
+    try:
+        entries = transport.list_dir(_leases_prefix(team, role))
+        leases: Optional[list[dict[str, Any]]] = []
+        for e in entries:
+            n = e.get("name") or ""
+            if e.get("is_dir") or not n.endswith(".md"):
+                continue
+            fm = okf.parse_frontmatter(transport.read(_leases_prefix(team, role) + n)) or {}
+            leases.append({"agent": fm.get("agent") or n[:-3], "timestamp": fm.get("timestamp")})
+    except TransportError:
+        leases = None  # unreadable -> UNKNOWN
+    status = roles.classify(leases, now=now, sla_hours=sla, policy=policy)
+    today = _now().strftime("%Y-%m-%d")
+    marker_exists = transport.read(_escalation_marker_path(team, role, today)) is not None
+    esc = roles.escalation_due(leases, now=now, sla_hours=sla, marker_exists_today=marker_exists)
+    fresh = roles.fresh_holders(leases, now=now, sla_hours=sla) if leases else []
+    result = {
+        "team": team, "role": role, "status": status, "policy": policy, "sla_hours": sla,
+        "holders": [l.get("agent") for l in (leases or [])],
+        "fresh_holders": [l.get("agent") for l in fresh],
+        "escalation_due": esc,
+    }
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"role {role} in team/{team}: {status} (policy={policy}, sla={sla:g}h)")
+        if fresh:
+            print("  fresh holders: " + ", ".join(str(l.get("agent")) for l in fresh))
+        if esc:
+            print("  ESCALATION DUE — vacant past SLA, no marker today")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="coord-reconcile", description=__doc__)
+    p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
 
     def add_json(sp):
@@ -151,6 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
     sc = sub.add_parser("search", help="substring search over tasks")
     sc.add_argument("team"); sc.add_argument("query"); add_json(sc)
     sc.set_defaults(func=cmd_search)
+
+    rl = sub.add_parser("roles", help="role status fold (fulcra-agent-roles)")
+    rlsub = rl.add_subparsers(dest="roles_command", required=True)
+    rst = rlsub.add_parser("status", help="HELD/VACANT/CONTESTED + escalation-due")
+    rst.add_argument("team"); rst.add_argument("role"); add_json(rst)
+    rst.set_defaults(func=cmd_roles_status)
     return p
 
 
@@ -160,7 +223,7 @@ def main(argv: Optional[list[str]] = None, transport: Any = None) -> int:
     try:
         return args.func(args, transport)
     except Exception as e:  # never dump a traceback at the user
-        print(f"coord-reconcile: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"coord-engine: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
 

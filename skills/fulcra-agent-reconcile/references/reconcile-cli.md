@@ -5,32 +5,27 @@ description: "Exact commands to run the coord-reconcile tool over a fulcra-agent
 
 # Fulcra Agent Reconcile — CLI reference
 
-The tool is a stdlib-only Python package bundled in this skill
-(`skills/fulcra-agent-reconcile/`). It shells out to `fulcra-api file` for all storage I/O, so
-`fulcra-api` must be authenticated (`fulcra-api auth login`).
+The logic lives in the shared **`coord-engine`** tool (repo `engine/`). It shells out to `fulcra-api file`
+for all storage I/O, so `fulcra-api` must be authenticated (`fulcra-api auth login`).
 
-## Run
+## Install / run
 
-From the coord2 repo root:
+Install once (like `fulcra-api`), then invoke via `uv tool run`:
 ```bash
-uv run --project skills/fulcra-agent-reconcile coord-reconcile <command> ...
-```
-Or install it once and call `coord-reconcile` directly:
-```bash
-uv tool install --force skills/fulcra-agent-reconcile
-coord-reconcile reconcile <team>
+uv tool install coord-engine            # or, from source: uv tool install <coord2>/engine
+uv tool run coord-engine reconcile <team>
 ```
 
 ## Commands
 ```bash
 # Scan team/<team>/task/*.md -> heal task/index.md + task/log.md -> write _coord/summaries.json
-coord-reconcile reconcile <team>
+uv tool run coord-engine reconcile <team>
 
 # Read views (one aggregate download each; run reconcile first):
-coord-reconcile status   <team> [--json]           # counts by status
-coord-reconcile board    <team> [--json]           # open work grouped active/waiting/blocked/proposed
-coord-reconcile needs-me <team> --agent <id> [--json]  # assigned-to / blocking <id>, gated on not_before
-coord-reconcile search   <team> <query> [--json]   # substring over id/title/description/tags
+uv tool run coord-engine status   <team> [--json]          # counts by status
+uv tool run coord-engine board    <team> [--json]          # open work grouped active/waiting/blocked/proposed
+uv tool run coord-engine needs-me <team> --agent <id> [--json]  # assigned-to / blocking <id>, gated on not_before
+uv tool run coord-engine search   <team> <query> [--json]  # substring over id/title/description/tags
 ```
 
 ## Environment
@@ -49,5 +44,5 @@ coord-reconcile search   <team> <query> [--json]   # substring over id/title/des
 
 ## Tests
 ```bash
-cd skills/fulcra-agent-reconcile && uv run --extra dev pytest -q
+cd engine && uv run --extra dev pytest -q
 ```

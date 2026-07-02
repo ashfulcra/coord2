@@ -23,11 +23,11 @@ uv tool run fulcra-api file upload /tmp/roles-index.md "team/<team>/roles/index.
 uv tool run fulcra-api file upload /tmp/my-lease.md "team/<team>/roles/reviewer/leases/<your-agent>.md"
 ```
 
-## Read role status (the fold)
+## Read role status (the fold) — deterministic, via coord-engine
+Do NOT classify by eyeballing timestamps. The engine folds policy + lease freshness:
 ```bash
-# list holders, then read each lease's timestamp to classify HELD / VACANT / CONTESTED
-uv tool run fulcra-api file list "team/<team>/roles/reviewer/leases/"
-uv tool run fulcra-api file download "team/<team>/roles/reviewer/leases/<agent>.md" -
+uv tool run coord-engine roles status "<team>" "reviewer" --json
+# -> {status: HELD|VACANT|CONTESTED|UNKNOWN, policy, sla_hours, holders, fresh_holders, escalation_due}
 ```
 
 ## Release

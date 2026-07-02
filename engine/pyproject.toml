@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "coord-reconcile"
+name = "coord-engine"
 dynamic = ["version"]
-description = "L1 of coord2 — heal a fulcra-agent-teams namespace's OKF indexes and serve queryable views"
+description = "L1 of coord2 — the shared coord2 engine: reconcile + queries + roles fold over a fulcra-agent-teams namespace"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -16,10 +16,10 @@ dependencies = []
 dev = ["pytest"]
 
 [project.scripts]
-coord-reconcile = "coord_reconcile.cli:main"
+coord-engine = "coord_engine.cli:main"
 
 [tool.hatch.version]
-path = "coord_reconcile/__init__.py"
+path = "coord_engine/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["coord_reconcile"]
+packages = ["coord_engine"]

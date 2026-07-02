@@ -1,4 +1,4 @@
-from coord_reconcile import okf
+from coord_engine import okf
 
 
 # --- split_frontmatter ---
@@ -121,9 +121,16 @@ def test_render_index_priority_ordering():
 
 def test_merge_log_into_empty():
     out = okf.merge_log(None, ["* **Creation**: [a](a.md) created (active)."], date="2026-07-01")
-    assert out.startswith("# Task Update Log")
+    assert out.startswith(okf.ENGINE_BANNER)  # in-band ownership guardrail
+    assert "# Task Update Log" in out
     assert "## 2026-07-01" in out
     assert "Creation" in out
+
+
+def test_render_index_has_engine_banner():
+    out = okf.render_index([_row("a", "active", "Alpha", "x")])
+    assert out.startswith(okf.ENGINE_BANNER)
+    assert "ENGINE-OWNED" in out
 
 
 def test_merge_log_prepends_new_date_newest_first():
