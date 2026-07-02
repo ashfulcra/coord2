@@ -73,6 +73,7 @@ def apply_update(
     blocked_on: Optional[str] = None,
     priority: Optional[str] = None,
     evidence: Optional[str] = None,
+    add_tags: Optional[list[str]] = None,
 ) -> str:
     """Read-modify-write a task doc, enforcing the status machine. Raises
     ``TaskError`` on a missing doc, unparseable frontmatter, or illegal transition."""
@@ -104,6 +105,11 @@ def apply_update(
         fm["assignee"] = assignee
     if blocked_on is not None:
         fm["blocked_on"] = blocked_on
+    if add_tags:
+        cur = fm.get("tags") or []
+        if not isinstance(cur, list):
+            cur = [str(cur)]
+        fm["tags"] = cur + [t for t in add_tags if t not in cur]
     fm["timestamp"] = now
     note = f"{now}: {old_status} → {fm['status']}" if status else f"{now}: updated"
     if evidence:
