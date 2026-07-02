@@ -99,3 +99,12 @@ def test_cli_task_illegal_transition_fails(capsys):
     capsys.readouterr()
     assert cli.main(["task", "update", "r", "t", "--status", "active"], transport=t) == 1
     assert "illegal transition" in capsys.readouterr().err
+
+
+def test_cli_task_update_done_needs_evidence(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "T", "--status", "active"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["task", "update", "r", "t", "--status", "done"], transport=t) == 1
+    assert "done requires evidence" in capsys.readouterr().err
+    assert cli.main(["task", "update", "r", "t", "--status", "done", "-e", "ok"], transport=t) == 0

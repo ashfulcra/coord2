@@ -87,6 +87,10 @@ def apply_update(
             raise TaskError(f"invalid status {status!r}")
         if not is_valid_transition(old_status, status):
             raise TaskError(f"illegal transition {old_status} -> {status}")
+        # Enforce "done requires evidence" HERE so it holds through every entry
+        # point (`task update --status done`, not only `task done`).
+        if status == "done" and not evidence:
+            raise TaskError("done requires evidence")
         fm["status"] = status
     if priority is not None:
         if priority not in VALID_PRIORITIES:
@@ -109,7 +113,5 @@ def apply_update(
 
 
 def mark_done(existing: Optional[str], *, now: str, evidence: str) -> str:
-    """Transition to ``done`` — requires evidence (mirrors coord's discipline)."""
-    if not evidence:
-        raise TaskError("done requires evidence")
+    """Transition to ``done`` — thin wrapper; ``apply_update`` enforces evidence."""
     return apply_update(existing, now=now, status="done", evidence=evidence)
