@@ -139,3 +139,24 @@ def test_cli_review_keys_by_filename_not_frontmatter(capsys):
     # alice's real changes still blocks; mallory counts as her own (approve) reviewer
     assert res["state"] == "CHANGES"
     assert "alice" in res["changes"] and "mallory" in res["approvals"]
+
+
+def test_cli_continuity_snapshot_and_resume(capsys):
+    t = FakeTransport()
+    assert cli.main(["continuity", "snapshot", "r", "ash", "build-l6",
+                     "--objective", "ship it", "--next", "land PR",
+                     "--open-question", "naming?", "--context-percent", "40"], transport=t) == 0
+    assert "snapshot CHK-" in capsys.readouterr().out
+    assert cli.main(["continuity", "resume", "r", "ash", "build-l6"], transport=t) == 0
+    out = capsys.readouterr().out
+    assert "objective: ship it" in out and "land PR" in out
+
+
+def test_cli_continuity_resume_picks_latest_across_tasks(capsys):
+    t = FakeTransport()
+    cli.main(["continuity", "snapshot", "r", "ash", "old", "--objective", "older"], transport=t)
+    cli.main(["continuity", "snapshot", "r", "ash", "new", "--objective", "newest"], transport=t)
+    capsys.readouterr()
+    # no task arg -> fold to the newest across the member's snapshots
+    cli.main(["continuity", "resume", "r", "ash"], transport=t)
+    assert "newest" in capsys.readouterr().out

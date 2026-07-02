@@ -20,13 +20,22 @@ class FakeTransport:
         if self.fail_list:
             raise TransportError("boom")
         out = []
+        seen_dirs = set()
         for p in sorted(self.store):
-            if p.startswith(prefix):
-                rest = p[len(prefix):]
-                if "/" in rest.rstrip("/"):
-                    continue  # not a direct child
-                out.append({"name": rest, "mtime": self.mtimes.get(p),
-                            "is_dir": rest.endswith("/")})
+            if not p.startswith(prefix):
+                continue
+            rest = p[len(prefix):]
+            head = rest.rstrip("/")
+            if "/" in head:
+                # deeper than a direct child -> synthesize the intermediate dir
+                # entry, matching `fulcra-api file list` (which shows `sub/`).
+                seg = head.split("/", 1)[0] + "/"
+                if seg not in seen_dirs:
+                    seen_dirs.add(seg)
+                    out.append({"name": seg, "mtime": None, "is_dir": True})
+                continue
+            out.append({"name": rest, "mtime": self.mtimes.get(p),
+                        "is_dir": rest.endswith("/")})
         return out
 
     def read(self, path):
