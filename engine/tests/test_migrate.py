@@ -164,3 +164,16 @@ def test_map_task_preserves_links_and_checklist_in_body():
     _, _, body = migrate.map_task(t, now=NOW)
     assert "PR: https://github.com/o/r/pull/7" in body
     assert "Ticket: JIRA-9" in body and "- [ ] step one" in body
+
+
+def test_long_title_slug_capped_and_stable():
+    from coord_engine.tasks import MAX_SLUG_LEN
+    long_title = "drift alert " + "x" * 700
+    a = _incumbent("TASK-LONG-1", long_title)
+    slug1, _, _ = migrate.map_task(a, now=NOW)
+    assert len(slug1) <= MAX_SLUG_LEN
+    # same prefix, different id -> different slug (no collision)
+    slug2, _, _ = migrate.map_task(_incumbent("TASK-LONG-2", long_title), now=NOW)
+    assert slug1 != slug2
+    # deterministic across runs
+    assert slug1 == migrate.map_task(a, now=NOW)[0]

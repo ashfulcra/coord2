@@ -51,6 +51,12 @@ def map_task(t: dict[str, Any], *, now: str) -> tuple[str, dict[str, Any], str]:
     """Deterministic incumbent-task -> (slug, frontmatter, body) mapping."""
     title = str(t.get("title") or t.get("id") or "untitled")
     slug = slugify(title)
+    # a capped slug from a long title needs a stable disambiguator (two long
+    # titles sharing an 80-char prefix must not collide)
+    from .tasks import MAX_SLUG_LEN
+    raw = title.lower()
+    if len(raw) > MAX_SLUG_LEN:
+        slug = f"{slug[:MAX_SLUG_LEN - 7]}-{agent_key(str(t.get('id') or title))[-6:]}"
     status = t.get("status") if t.get("status") in VALID_STATUSES else "proposed"
     priority = t.get("priority") if t.get("priority") in VALID_PRIORITIES else "P2"
     tags: list[str] = []
