@@ -656,12 +656,16 @@ def cmd_health(args: argparse.Namespace, transport: Any) -> int:
         return 0
     print(f"health — team/{args.team}: {view['fresh']}/{view['total']} host(s) fresh"
           + ("" if view["healthy"] else "  [NO FRESH RECONCILER]"))
+    if view["total"] == 0:
+        print("  (no health shards at all — nobody has ever reconciled this team)")
     for h in view["hosts"]:
         age = "?" if h["age_hours"] is None else f"{h['age_hours']:g}h"
         flag = "STALE" if h["stale"] else "ok"
         print(f"  [{flag:5}] {h['host']} — last reconcile {age} ago"
               f" (v{h.get('engine_version')}, {h.get('tasks')} tasks, {h.get('warnings')} warn)")
-    return 0 if view["healthy"] or view["total"] == 0 else 1
+    # empty fleet reads UNHEALTHY: "nobody ever reconciled" is the primary
+    # cold-start failure a monitor probe exists to catch (review finding).
+    return 0 if view["healthy"] else 1
 
 
 def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
@@ -669,11 +673,13 @@ def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
     import shutil
     ok = True
     from .transport import _split_command
-    cli_cmd = _split_command()[0]
-    if shutil.which(cli_cmd):
-        print(f"  ✓ storage CLI on PATH ({cli_cmd})")
+    full_cmd = " ".join(_split_command())
+    launcher = _split_command()[0]
+    if shutil.which(launcher):
+        print(f"  ✓ storage command launcher on PATH ({launcher}; full: {full_cmd!r})")
     else:
-        print(f"  ✗ storage CLI NOT found ({cli_cmd}) — install fulcra-api + auth login", file=sys.stderr)
+        print(f"  ✗ storage command launcher NOT found ({launcher}; full: {full_cmd!r}) — "
+              f"install fulcra-api + auth login", file=sys.stderr)
         ok = False
     try:
         transport.list_dir(f"team/{args.team}/" if args.team else "team/")

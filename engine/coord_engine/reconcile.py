@@ -320,8 +320,8 @@ def reconcile(
             ts = (sh or {}).get("at")
             if ts and age_hours(ts, now) > health_mod.SHARD_RETENTION_HOURS                     and hasattr(transport, "delete"):
                 transport.delete(health_mod.health_prefix(team) + n)
-    except Exception:
-        pass
+    except Exception as e:  # never fail the pass, but never go silently dark either
+        log.warn("health shard write/gc failed (host will look dark)", error=str(e))
 
     log.info(
         "reconciled", team=team, tasks=len(rows), reused=reused, parsed=parsed,

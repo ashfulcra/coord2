@@ -634,3 +634,9 @@ def test_doctor_reports_and_exit_code(capsys):
             raise RuntimeError("offline")
     assert cli.main(["doctor", "r"], transport=Broken()) == 1
     assert "unreachable" in capsys.readouterr().err
+
+
+def test_health_empty_fleet_reads_unhealthy(capsys):
+    t = FakeTransport()
+    assert cli.main(["health", "r"], transport=t) == 1     # cold-start must not read green
+    assert "nobody has ever reconciled" in capsys.readouterr().out
