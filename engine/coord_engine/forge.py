@@ -20,10 +20,17 @@ from typing import Any, Callable, Optional
 _PR_URL = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
 
 
-def parse_pr_url(artifact: Optional[str]) -> Optional[str]:
-    """Return the canonical PR URL, or None if the artifact isn't a GitHub PR."""
+def parse_pr_url(artifact: Optional[str], *, repo: Optional[str] = None) -> Optional[str]:
+    """Return the canonical PR URL, or None if the artifact isn't a GitHub PR.
+    With ``repo`` (owner/name), URLs for any OTHER repo return None — the
+    allowlist that stops a mis-set artifact from driving a wrong-repo
+    auto-approval (review finding)."""
     m = _PR_URL.search(str(artifact or ""))
-    return f"https://github.com/{m.group(1)}/pull/{m.group(2)}" if m else None
+    if not m:
+        return None
+    if repo and m.group(1).lower() != repo.lower():
+        return None
+    return f"https://github.com/{m.group(1)}/pull/{m.group(2)}"
 
 
 def default_runner(args: list[str]) -> Optional[str]:
@@ -54,6 +61,7 @@ def mirror(
     *,
     now: str,
     runner: Callable[[list[str]], Optional[str]] = default_runner,
+    repo: Optional[str] = None,
 ) -> dict[str, Any]:
     """One mirror pass. Returns {checked, mirrored, verdicts, skipped}."""
     from . import okf
@@ -71,7 +79,7 @@ def mirror(
             continue
         slug = n[:-3]
         fm = okf.parse_frontmatter(transport.read(prefix + n)) or {}
-        url = parse_pr_url(fm.get("artifact"))
+        url = parse_pr_url(fm.get("artifact"), repo=repo)
         if not url:
             continue
         checked += 1
@@ -81,18 +89,18 @@ def mirror(
         label = "MERGED" if state.get("mergedAt") else str(state.get("state") or "UNKNOWN").upper()
         shard = f"team/{team}/_coord/evidence/{slug}/state-{label}.md"
         if transport.read(shard) is None:  # idempotent per state transition
-            transport.write(shard, okf.render_frontmatter({
+            if transport.write(shard, okf.render_frontmatter({
                 "type": "Evidence", "source": "forge", "state": label,
                 "artifact": url, "timestamp": now,
                 "review_decision": state.get("reviewDecision"),
-            }) + f"\nPR is {label} as of {now}.\n")
-            mirrored += 1
+            }) + f"\nPR is {label} as of {now}.\n"):
+                mirrored += 1  # count only landed writes (failed ones retry next pass)
         if label == "MERGED":
             vpath = f"team/{team}/review/{slug}/verdicts/forge.md"
             if transport.read(vpath) is None:
-                transport.write(vpath, okf.render_frontmatter({
+                if transport.write(vpath, okf.render_frontmatter({
                     "type": "Verdict", "reviewer": "forge", "verdict": "approve",
                     "timestamp": now,
-                }) + f"\nAuto-approved: PR merged on the forge ({url}).\n")
-                verdicts += 1
+                }) + f"\nAuto-approved: PR merged on the forge ({url}).\n"):
+                    verdicts += 1
     return {"checked": checked, "mirrored": mirrored, "verdicts": verdicts}

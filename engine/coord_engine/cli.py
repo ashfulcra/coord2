@@ -935,7 +935,8 @@ def cmd_forge_mirror(args: argparse.Namespace, transport: Any) -> int:
               file=sys.stderr)
         return 0  # degradation, not an error
     res = forge_mod.mirror(transport, args.team, now=_iso(_now()),
-                           runner=args.runner or forge_mod.default_runner)
+                           runner=args.runner or forge_mod.default_runner,
+                           repo=args.repo)
     if res.get("error"):
         print(f"forge mirror: {res['error']}", file=sys.stderr)
         return 1
@@ -1048,6 +1049,7 @@ def build_parser() -> argparse.ArgumentParser:
     fgsub = fg.add_subparsers(dest="forge_command", required=True)
     fgm = fgsub.add_parser("mirror", help="one pass: PR state -> evidence shards + auto-verdict on merge")
     fgm.add_argument("team")
+    fgm.add_argument("--repo", help="owner/name allowlist: mirror ONLY PR urls of this repo")
     fgm.set_defaults(func=cmd_forge_mirror, runner=None)
 
     rp = sub.add_parser("respond", help="answer + close a directive with an outcome")

@@ -66,3 +66,19 @@ def test_cli_forge_mirror_command(capsys):
     args.runner = lambda a: json.dumps({"state": "OPEN", "mergedAt": None})
     assert args.func(args, t) == 0
     assert "1 PR review(s) checked" in capsys.readouterr().out
+
+
+def test_repo_allowlist_blocks_foreign_pr():
+    assert forge.parse_pr_url("https://github.com/evil/other/pull/9", repo="o/r") is None
+    assert forge.parse_pr_url("https://github.com/o/r/pull/9", repo="o/r") \
+        == "https://github.com/o/r/pull/9"
+    assert forge.parse_pr_url("https://github.com/O/R/pull/9", repo="o/r") is not None  # case-insensitive
+
+
+def test_mirror_repo_filter_skips_foreign_review():
+    t = FakeTransport()
+    _team_with_review(t, slug="foreign", artifact="https://github.com/evil/other/pull/9")
+    runner = lambda a: json.dumps({"state": "MERGED", "mergedAt": "2026-07-02T14:00:00Z"})
+    res = forge.mirror(t, "r", now=NOW, runner=runner, repo="o/r")
+    assert res == {"checked": 0, "mirrored": 0, "verdicts": 0}
+    assert "team/r/review/foreign/verdicts/forge.md" not in t.store   # no wrong-repo auto-approve
