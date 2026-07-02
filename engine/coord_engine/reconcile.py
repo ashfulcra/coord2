@@ -15,6 +15,8 @@ import json
 from typing import Any, Optional
 
 from . import aggregate, model, okf
+from .roles import age_hours
+from .tasks import agent_key
 from .log import get_logger
 from .transport import TransportError
 
@@ -39,11 +41,21 @@ def _acks_prefix(team: str) -> str:
     return f"team/{team}/_coord/acks/"
 
 
-def _fold_and_gc_acks(transport: Any, team: str, live_slugs: set) -> tuple[dict, int]:
+GC_GRACE_HOURS = 24.0  #: never GC a shard younger than this (or undatable)
+
+
+def _fold_and_gc_acks(transport: Any, team: str, live_slugs: set, *,
+                      now: str) -> tuple[dict, int]:
     """Fold per-agent ack shards (_coord/acks/<slug>/<agent>.md) into
     {slug: [agent, ...]}, and GC shards whose parent task no longer exists —
-    the shard-GC sub-pass the plan review required (orphaned shards are the one
-    drift class the wholesale rebuild can't fix by itself)."""
+    the shard-GC sub-pass the plan review required.
+
+    GC is guarded against the data-loss case the code review flagged (a silently
+    TRUNCATED task listing makes live tasks look deleted): never GC when the
+    live set is empty, and only delete a shard that is DATABLE and older than
+    ``GC_GRACE_HOURS`` (undatable -> keep; the 0.15.16 age-discriminator lesson).
+    A transient truncation therefore can't erase recent acks; older ones go only
+    when the slug is still absent on a later healthy pass."""
     prefix = _acks_prefix(team)
     acks: dict[str, list] = {}
     gc = 0
@@ -68,11 +80,14 @@ def _fold_and_gc_acks(transport: Any, team: str, live_slugs: set) -> tuple[dict,
                 claimed = str(fm.get("agent") or "")
                 # trust frontmatter identity only when it matches the ACL-controlled
                 # filename stem (review-layer precedent); else the filename wins.
-                from .tasks import agent_key
                 agents.append(claimed if claimed and agent_key(claimed) == stem else stem)
             acks[n] = sorted(set(agents))
-        elif hasattr(transport, "delete"):
+        elif live_slugs and hasattr(transport, "delete"):
             for f in shard_files:
+                fm = okf.parse_frontmatter(transport.read(prefix + n + "/" + f["name"])) or {}
+                ts = fm.get("timestamp")
+                if ts is None or age_hours(ts, now) <= GC_GRACE_HOURS:
+                    continue  # undatable or within grace: keep (data-loss guard)
                 if transport.delete(prefix + n + "/" + f["name"]):
                     gc += 1
     return acks, gc
@@ -151,7 +166,7 @@ def reconcile(
         parsed += 1
 
     # --- ack fold + shard-GC sub-pass ---
-    acks, gc_count = _fold_and_gc_acks(transport, team, {r.get("name") for r in rows})
+    acks, gc_count = _fold_and_gc_acks(transport, team, {r.get("name") for r in rows}, now=now)
     for r in rows:
         r["acked_by"] = acks.get(r.get("name"), [])
     if gc_count:

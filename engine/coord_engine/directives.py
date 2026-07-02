@@ -25,8 +25,10 @@ def parse_when(when: str, *, now: str) -> Optional[str]:
     s = (when or "").strip()
     if not s:
         return None
-    if "T" in s or s.count("-") >= 2:
-        return s  # ISO-ish passthrough (lexically comparable)
+    if "T" in s:
+        return s  # full ISO passthrough (lexically comparable)
+    if s.count("-") >= 2:
+        return f"{s}T23:59:59Z"  # date-only: gate until end-of-day, not midnight
     unit = s[-1].lower()
     try:
         n = float(s[:-1])
