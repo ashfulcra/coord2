@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, okf, query, review, roles, tasks
+from . import aggregate, continuity, okf, query, review, roles, tasks
 from . import reconcile as rec
 from .transport import FulcraFileTransport, TransportError
 
@@ -283,6 +283,58 @@ def cmd_review_status(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- continuity (fulcra-agent-continuity snapshots) ---
+
+def _continuity_path(team: str, agent: str, task: str) -> str:
+    return f"team/{team}/member/{agent}/continuity/{task}/latest.json"
+
+
+def _continuity_prefix(team: str, agent: str) -> str:
+    return f"team/{team}/member/{agent}/continuity/"
+
+
+def cmd_continuity_snapshot(args: argparse.Namespace, transport: Any) -> int:
+    snap = continuity.build_snapshot(
+        agent=args.agent, task=args.task, objective=args.objective, now=_iso(_now()),
+        decisions=args.decision, next_actions=args.next, open_questions=args.open_question,
+        artifacts=args.artifact, context_used_percent=args.context_percent,
+        transcript_path=args.transcript,
+    )
+    transport.write(_continuity_path(args.team, args.agent, args.task), json.dumps(snap, indent=2))
+    print(f"snapshot {snap['checkpoint_id']}")
+    return 0
+
+
+def cmd_continuity_resume(args: argparse.Namespace, transport: Any) -> int:
+    if args.task:
+        raw = transport.read(_continuity_path(args.team, args.agent, args.task))
+        try:
+            snap = json.loads(raw) if raw else None
+        except Exception:
+            snap = None
+    else:
+        snaps: list[dict[str, Any]] = []
+        try:
+            for e in transport.list_dir(_continuity_prefix(args.team, args.agent)):
+                n = (e.get("name") or "").rstrip("/")
+                if not e.get("is_dir") or not n:
+                    continue
+                raw = transport.read(_continuity_path(args.team, args.agent, n))
+                if raw:
+                    try:
+                        snaps.append(json.loads(raw))
+                    except Exception:
+                        pass
+        except TransportError:
+            pass
+        snap = continuity.latest(snaps)
+    if args.json:
+        print(json.dumps(snap, indent=2))
+    else:
+        print(continuity.render_resume(snap))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -338,6 +390,23 @@ def build_parser() -> argparse.ArgumentParser:
     rvs = rvsub.add_parser("status", help="APPROVED/CHANGES/PENDING from reviewers' verdicts")
     rvs.add_argument("team"); rvs.add_argument("slug"); add_json(rvs)
     rvs.set_defaults(func=cmd_review_status)
+
+    ct = sub.add_parser("continuity", help="structured resumable snapshots (fulcra-agent-continuity)")
+    ctsub = ct.add_subparsers(dest="continuity_command", required=True)
+    cts = ctsub.add_parser("snapshot", help="write a structured resume snapshot")
+    cts.add_argument("team"); cts.add_argument("agent"); cts.add_argument("task")
+    cts.add_argument("--objective", required=True)
+    cts.add_argument("--next", action="append", dest="next")
+    cts.add_argument("--decision", action="append", dest="decision")
+    cts.add_argument("--open-question", action="append", dest="open_question")
+    cts.add_argument("--artifact", action="append", dest="artifact")
+    cts.add_argument("--context-percent", type=float, dest="context_percent")
+    cts.add_argument("--transcript", dest="transcript")
+    cts.set_defaults(func=cmd_continuity_snapshot)
+    ctr = ctsub.add_parser("resume", help="print a resume brief from the latest snapshot")
+    ctr.add_argument("team"); ctr.add_argument("agent"); ctr.add_argument("task", nargs="?")
+    ctr.add_argument("--json", action="store_true")
+    ctr.set_defaults(func=cmd_continuity_resume)
     return p
 
 
