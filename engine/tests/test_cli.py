@@ -269,3 +269,43 @@ def test_cli_task_block_rejects_both_flags(capsys):
     capsys.readouterr()
     assert cli.main(["task", "block", "r", "b", "--blocked-on", "x", "--on-user", "y"], transport=t) == 1
     assert "not both" in capsys.readouterr().err
+
+
+def test_cli_presence_beat_show_agents(capsys):
+    import json as _j
+    t = FakeTransport()
+    assert cli.main(["presence", "beat", "r", "-a", "amy", "-w", "web", "-s", "shipping"], transport=t) == 0
+    assert cli.main(["presence", "beat", "r", "-a", "bob"], transport=t) == 0
+    capsys.readouterr()
+    assert cli.main(["presence", "show", "r", "--json"], transport=t) == 0
+    ros = _j.loads(capsys.readouterr().out)
+    assert [x["agent"] for x in ros] == ["amy", "bob"]
+    assert all(x["liveness"] == "live" for x in ros)
+    # agents digest folds aggregate rows + presence
+    cli.main(["task", "start", "r", "W", "--status", "active", "--assignee", "amy"], transport=t)
+    cli.main(["reconcile", "r"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["agents", "r", "--json"], transport=t) == 0
+    dig = {a["agent"]: a for a in _j.loads(capsys.readouterr().out)}
+    assert dig["amy"]["open"].get("active") == 1
+    assert dig["bob"]["open"] == {}
+
+
+def test_cli_roles_claim_release_roundtrip(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md", "---\ntype: Role\npolicy: shared\nsla_hours: 24\n---\n")
+    assert cli.main(["roles", "claim", "r", "reviewer", "-a", "amy"], transport=t) == 0
+    capsys.readouterr()
+    cli.main(["roles", "status", "r", "reviewer", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out)["status"] == "HELD"
+    assert cli.main(["roles", "release", "r", "reviewer", "-a", "amy"], transport=t) == 0
+    capsys.readouterr()
+    cli.main(["roles", "status", "r", "reviewer", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out)["status"] == "VACANT"
+
+
+def test_cli_roles_release_without_lease_errors(capsys):
+    t = FakeTransport()
+    assert cli.main(["roles", "release", "r", "reviewer", "-a", "ghost"], transport=t) == 1
+    assert "no lease" in capsys.readouterr().err
