@@ -37,3 +37,10 @@ def test_render_resume_includes_fields():
     assert "objective: ship it" in out
     assert "land PR" in out and "naming?" in out
     assert "42%" in out
+
+
+def test_latest_tiebreak_deterministic():
+    a = {"created_at": NOW, "checkpoint_id": "CHK-a", "objective": "A"}
+    b = {"created_at": NOW, "checkpoint_id": "CHK-b", "objective": "B"}
+    assert continuity.latest([a, b])["objective"] == "B"
+    assert continuity.latest([b, a])["objective"] == "B"

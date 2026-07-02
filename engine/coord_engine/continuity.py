@@ -56,7 +56,8 @@ def latest(snapshots: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     valid = [s for s in snapshots if isinstance(s, dict) and s.get("created_at")]
     if not valid:
         return None
-    return max(valid, key=lambda s: str(s.get("created_at")))
+    # tie-break on checkpoint_id so the result never depends on listing order
+    return max(valid, key=lambda s: (str(s.get("created_at")), str(s.get("checkpoint_id") or "")))
 
 
 def render_resume(snapshot: Optional[dict[str, Any]]) -> str:
