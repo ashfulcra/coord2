@@ -18,6 +18,32 @@ from .transport import TransportError
 
 MIGRATED_TAG = "migrated:coord2"
 
+#: Tasks in an open review loop are NOT migration-eligible (the verdict path
+#: lives on the incumbent until the loop closes — plan review, Resolution §3).
+_REVIEW_KINDS = ("kind:review", "kind:review-verdict")
+
+
+def _in_open_review(t: dict[str, Any]) -> bool:
+    if t.get("pr"):
+        return True
+    tags = t.get("tags") or []
+    return any(k in tags for k in _REVIEW_KINDS)
+
+
+def _terminalize(t: dict[str, Any], *, now: str, team: str, slug: str) -> dict[str, Any]:
+    """Terminal transition on the incumbent (the ONE-ACTIVE-SYSTEM mechanism —
+    the tag alone does not hide a task from incumbent boards)."""
+    t["status"] = "abandoned"
+    t["updated_at"] = now
+    tags = t.setdefault("tags", [])
+    if MIGRATED_TAG not in tags:
+        tags.append(MIGRATED_TAG)
+    t.setdefault("events", []).append({
+        "at": now, "type": "abandoned", "by": "coord2-migrate",
+        "summary": f"migrated to coord2 team/{team}/task/{slug}.md",
+    })
+    return t
+
 
 def map_task(t: dict[str, Any], *, now: str) -> tuple[str, dict[str, Any], str]:
     """Deterministic incumbent-task -> (slug, frontmatter, body) mapping."""
@@ -66,7 +92,7 @@ def migrate(
     """One pass. Returns {planned:[…], migrated, skipped, marked, errors:[…]}."""
     planned: list[str] = []
     errors: list[str] = []
-    migrated = skipped = marked = 0
+    migrated = skipped = marked = repaired = skipped_review = 0
     try:
         entries = transport.list_dir(f"{source}/tasks/")
     except TransportError as e:
@@ -97,13 +123,26 @@ def migrate(
             t = None
         if not isinstance(t, dict) or not t.get("id"):
             continue
+        already_terminal = t.get("status") in ("done", "abandoned")
+        twin = existing_from.get(str(t.get("id")))
+        if twin is not None:
+            # REPAIR PASS: twin exists but the incumbent transition never landed
+            if not already_terminal and mark and not dry_run:
+                if transport.write(f"{source}/tasks/{n}",
+                                   json.dumps(_terminalize(t, now=now, team=team, slug=twin), indent=1)):
+                    repaired += 1
+                else:
+                    errors.append(f"{t['id']}: repair transition failed (still open on incumbent)")
+            else:
+                skipped += 1
+            continue
         if MIGRATED_TAG in (t.get("tags") or []):
             skipped += 1
             continue
-        if not include_terminal and t.get("status") in ("done", "abandoned"):
+        if not include_terminal and already_terminal:
             continue
-        if str(t.get("id")) in existing_from:
-            skipped += 1
+        if _in_open_review(t):
+            skipped_review += 1
             continue
         if limit is not None and migrated + len(planned) >= limit and dry_run:
             break
@@ -126,11 +165,12 @@ def migrate(
         migrated += 1
         existing_slugs.add(slug)
         if mark:
-            t.setdefault("tags", []).append(MIGRATED_TAG)
-            if transport.write(f"{source}/tasks/{n}", json.dumps(t, indent=1)):
+            if transport.write(f"{source}/tasks/{n}",
+                               json.dumps(_terminalize(t, now=now, team=team, slug=slug), indent=1)):
                 marked += 1
             else:
-                errors.append(f"{t['id']}: migrated but MARK FAILED — re-run may duplicate "
-                              f"(idempotence via migrated_from still guards)")
+                errors.append(f"{t['id']}: migrated but incumbent transition FAILED — "
+                              f"still open there; next run's repair pass will finish it")
     return {"planned": planned, "migrated": migrated, "skipped": skipped,
-            "marked": marked, "errors": errors}
+            "marked": marked, "repaired": repaired, "skipped_review": skipped_review,
+            "errors": errors}

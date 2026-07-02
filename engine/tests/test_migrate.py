@@ -46,9 +46,11 @@ def test_migrate_end_to_end_idempotent_and_marked():
     assert res["migrated"] == 1 and res["errors"] == []       # terminal excluded
     doc = t.store["team/fulcra/task/fix-the-widget.md"]
     assert okf.parse_frontmatter(doc)["migrated_from"] == "TASK-X-1"
-    # incumbent marked
+    # incumbent gets a TERMINAL transition (the one-active-system mechanism), not just a tag
     marked = json.loads(t.store["/coordination/tasks/TASK-X-1.json"])
     assert migrate.MIGRATED_TAG in marked["tags"]
+    assert marked["status"] == "abandoned"
+    assert any(e.get("by") == "coord2-migrate" for e in marked.get("events", []))
     # second run: skip via the tag (and via migrated_from even if tag missing)
     res2 = migrate.migrate(t, "fulcra", now=NOW)
     assert res2["migrated"] == 0 and res2["skipped"] >= 1
@@ -78,7 +80,7 @@ def test_migrate_mark_failure_reports_but_keeps_coord2_doc():
     orig = t.write
     t.write = lambda p, c: False if p.startswith("/coordination/") else orig(p, c)
     res = migrate.migrate(t, "fulcra", now=NOW)
-    assert res["migrated"] == 1 and any("MARK FAILED" in e for e in res["errors"])
+    assert res["migrated"] == 1 and any("transition FAILED" in e for e in res["errors"])
     assert "team/fulcra/task/fix-it.md" in t.store
 
 
@@ -88,3 +90,25 @@ def test_cli_migrate_dry_run(capsys):
     assert cli.main(["migrate", "fulcra", "--dry-run"], transport=t) == 0
     out = capsys.readouterr().out
     assert "DRY RUN" in out and "TASK-X-1 -> task/fix-it.md" in out
+
+
+def test_migrate_skips_open_review_loops():
+    t = FakeTransport()
+    t.put("/coordination/tasks/TASK-R.json",
+          json.dumps(_incumbent("TASK-R", "Review PR 9", pr="https://github.com/o/r/pull/9")))
+    res = migrate.migrate(t, "fulcra", now=NOW)
+    assert res["migrated"] == 0 and res["skipped_review"] == 1
+    inc = json.loads(t.store["/coordination/tasks/TASK-R.json"])
+    assert inc["status"] == "active"                          # untouched
+
+
+def test_migrate_repair_pass_finishes_incumbent_transition():
+    t = FakeTransport()
+    # coord2 twin exists (migrated_from), incumbent still open (mark failed previously)
+    t.put("team/fulcra/task/fix-it.md",
+          "---\ntype: Task\ntitle: Fix it\nstatus: active\nmigrated_from: TASK-X-1\n---\n")
+    t.put("/coordination/tasks/TASK-X-1.json", json.dumps(_incumbent("TASK-X-1", "Fix it")))
+    res = migrate.migrate(t, "fulcra", now=NOW)
+    assert res["repaired"] == 1 and res["migrated"] == 0      # no duplicate doc
+    inc = json.loads(t.store["/coordination/tasks/TASK-X-1.json"])
+    assert inc["status"] == "abandoned"                       # dual-listing healed
