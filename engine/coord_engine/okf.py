@@ -110,6 +110,33 @@ def _parse_yaml_subset(fm_text: str) -> dict[str, Any]:
     return out
 
 
+def _needs_quote(s: str) -> bool:
+    if s == "" or s != s.strip():
+        return True
+    return s[0] in "[{!&*#?|>%@`\"'" or ": " in s or s.lower() in ("null", "true", "false", "~")
+
+
+def render_frontmatter(fields: dict[str, Any]) -> str:
+    """Serialize a frontmatter dict to an OKF ``---`` block (inverse of
+    ``parse_frontmatter`` for the subset we use). ``None`` values are omitted.
+    Round-trips with ``parse_frontmatter`` for scalars and inline lists.
+    """
+    lines = ["---"]
+    for key, val in fields.items():
+        if val is None:
+            continue
+        if isinstance(val, bool):
+            lines.append(f"{key}: {'true' if val else 'false'}")
+        elif isinstance(val, list):
+            inner = ", ".join(str(x) for x in val)
+            lines.append(f"{key}: [{inner}]")
+        else:
+            s = str(val)
+            lines.append(f"{key}: {chr(34) + s + chr(34) if _needs_quote(s) else s}")
+    lines.append("---")
+    return "\n".join(lines)
+
+
 # --- rendering (OKF §6 index, §7 log) ---------------------------------------
 
 #: In-band guardrail so a hand-editing agent (or human) sees the ownership
