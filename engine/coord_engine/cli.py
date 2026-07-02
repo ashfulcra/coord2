@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, continuity, directives, okf, presence, query, review, roles, tasks
+from . import aggregate, continuity, directives, health as health_mod, okf, presence, query, review, roles, tasks
 from . import reconcile as rec
 from .transport import FulcraFileTransport, TransportError
 
@@ -637,6 +637,56 @@ def cmd_roles_release(args: argparse.Namespace, transport: Any) -> int:
     return 0 if ok else 1
 
 
+# --- health / doctor (fulcra-agent-health) ---
+
+def cmd_health(args: argparse.Namespace, transport: Any) -> int:
+    shards = []
+    try:
+        for e in transport.list_dir(health_mod.health_prefix(args.team)):
+            n = e.get("name") or ""
+            if not e.get("is_dir") and n.endswith(".json"):
+                sh = health_mod.parse_shard(transport.read(health_mod.health_prefix(args.team) + n))
+                if sh:
+                    shards.append(sh)
+    except TransportError:
+        pass
+    view = health_mod.fold(shards, now=_iso(_now()))
+    if args.json:
+        print(json.dumps(view, indent=2))
+        return 0
+    print(f"health — team/{args.team}: {view['fresh']}/{view['total']} host(s) fresh"
+          + ("" if view["healthy"] else "  [NO FRESH RECONCILER]"))
+    for h in view["hosts"]:
+        age = "?" if h["age_hours"] is None else f"{h['age_hours']:g}h"
+        flag = "STALE" if h["stale"] else "ok"
+        print(f"  [{flag:5}] {h['host']} — last reconcile {age} ago"
+              f" (v{h.get('engine_version')}, {h.get('tasks')} tasks, {h.get('warnings')} warn)")
+    return 0 if view["healthy"] or view["total"] == 0 else 1
+
+
+def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
+    """Local preflight: tooling on PATH + store reachable. Exit 0 = healthy."""
+    import shutil
+    ok = True
+    from .transport import _split_command
+    cli_cmd = _split_command()[0]
+    if shutil.which(cli_cmd):
+        print(f"  ✓ storage CLI on PATH ({cli_cmd})")
+    else:
+        print(f"  ✗ storage CLI NOT found ({cli_cmd}) — install fulcra-api + auth login", file=sys.stderr)
+        ok = False
+    try:
+        transport.list_dir(f"team/{args.team}/" if args.team else "team/")
+        print("  ✓ File Store reachable")
+    except Exception as e:
+        print(f"  ✗ File Store unreachable: {type(e).__name__}: {e}", file=sys.stderr)
+        ok = False
+    from . import __version__ as _v
+    print(f"  ✓ coord-engine v{_v}")
+    print("doctor: healthy" if ok else "doctor: PROBLEMS FOUND")
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -717,6 +767,13 @@ def build_parser() -> argparse.ArgumentParser:
     ib.add_argument("team"); ib.add_argument("--agent", "-a"); ib.add_argument("--ack")
     ib.add_argument("--all", action="store_true", help="include @backlog"); add_json(ib)
     ib.set_defaults(func=cmd_inbox)
+    hl = sub.add_parser("health", help="fleet health: which hosts reconcile this team (fulcra-agent-health)")
+    hl.add_argument("team"); add_json(hl)
+    hl.set_defaults(func=cmd_health)
+    dr = sub.add_parser("doctor", help="local preflight: tooling + store reachability")
+    dr.add_argument("team", nargs="?")
+    dr.set_defaults(func=cmd_doctor)
+
     rp = sub.add_parser("respond", help="answer + close a directive with an outcome")
     rp.add_argument("team"); rp.add_argument("name"); rp.add_argument("--outcome", "-o", required=True)
     rp.add_argument("--evidence", "-e"); rp.add_argument("--agent", "-a")
