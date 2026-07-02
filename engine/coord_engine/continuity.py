@@ -51,12 +51,24 @@ def build_snapshot(
     }
 
 
+def _parseable_ts(ts: Any) -> bool:
+    try:
+        datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def latest(snapshots: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    """Fold many snapshots to the newest by ``created_at`` (ISO sorts lexically)."""
-    valid = [s for s in snapshots if isinstance(s, dict) and s.get("created_at")]
+    """Fold many snapshots to the newest by ``created_at`` (ISO sorts lexically).
+
+    Malformed ``created_at`` values are IGNORED — lexical compare would otherwise
+    let a corrupt snapshot (``not-a-date`` > ``2026-…``) shadow every valid one
+    (Codex review finding). Ties break on ``checkpoint_id``."""
+    valid = [s for s in snapshots
+             if isinstance(s, dict) and _parseable_ts(s.get("created_at"))]
     if not valid:
         return None
-    # tie-break on checkpoint_id so the result never depends on listing order
     return max(valid, key=lambda s: (str(s.get("created_at")), str(s.get("checkpoint_id") or "")))
 
 
