@@ -84,6 +84,23 @@ def test_migrate_mark_failure_reports_but_keeps_coord2_doc():
     assert "team/fulcra/task/fix-it.md" in t.store
 
 
+def test_migrate_readback_mismatch_leaves_incumbent_open():
+    t = FakeTransport()
+    t.put("/coordination/tasks/TASK-X-1.json", json.dumps(_incumbent("TASK-X-1", "Fix it")))
+    orig = t.read
+
+    def corrupt_coord2_read(path):
+        if path == "team/fulcra/task/fix-it.md":
+            return "corrupted"
+        return orig(path)
+
+    t.read = corrupt_coord2_read
+    res = migrate.migrate(t, "fulcra", now=NOW)
+    assert res["migrated"] == 0 and any("not readable back" in e for e in res["errors"])
+    inc = json.loads(t.store["/coordination/tasks/TASK-X-1.json"])
+    assert inc["status"] == "active"
+
+
 def test_cli_migrate_dry_run(capsys):
     t = FakeTransport()
     t.put("/coordination/tasks/TASK-X-1.json", json.dumps(_incumbent("TASK-X-1", "Fix it")))
@@ -100,6 +117,18 @@ def test_migrate_skips_open_review_loops():
     assert res["migrated"] == 0 and res["skipped_review"] == 1
     inc = json.loads(t.store["/coordination/tasks/TASK-R.json"])
     assert inc["status"] == "active"                          # untouched
+
+
+def test_migrate_skips_review_workstream_dispatches():
+    t = FakeTransport()
+    t.put("/coordination/tasks/TASK-R.json",
+          json.dumps(_incumbent("TASK-R", "Review migration plan",
+                                workstream="review", kind="dispatch",
+                                tags=["kind:dispatch", "workstream:review"])))
+    res = migrate.migrate(t, "fulcra", now=NOW)
+    assert res["migrated"] == 0 and res["skipped_review"] == 1
+    inc = json.loads(t.store["/coordination/tasks/TASK-R.json"])
+    assert inc["status"] == "active"
 
 
 def test_migrate_repair_pass_finishes_incumbent_transition():

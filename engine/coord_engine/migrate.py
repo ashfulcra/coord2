@@ -26,8 +26,10 @@ _REVIEW_KINDS = ("kind:review", "kind:review-verdict")
 def _in_open_review(t: dict[str, Any]) -> bool:
     if t.get("pr"):
         return True
+    if t.get("workstream") == "review":
+        return True
     tags = t.get("tags") or []
-    return any(k in tags for k in _REVIEW_KINDS)
+    return "workstream:review" in tags or any(k in tags for k in _REVIEW_KINDS)
 
 
 def _terminalize(t: dict[str, Any], *, now: str, team: str, slug: str) -> dict[str, Any]:
@@ -156,10 +158,11 @@ def migrate(
             planned.append(f"{t['id']} -> task/{slug}.md [{fm['status']}/{fm['priority']}]")
             continue
         dst = f"team/{team}/task/{slug}.md"
-        if not transport.write(dst, okf.render_frontmatter(fm) + body):
+        content = okf.render_frontmatter(fm) + body
+        if not transport.write(dst, content):
             errors.append(f"{t['id']}: coord2 write failed; incumbent untouched")
             continue
-        if transport.read(dst) is None:  # verify before marking (one-active-system)
+        if transport.read(dst) != content:  # verify before marking (one-active-system)
             errors.append(f"{t['id']}: coord2 write not readable back; incumbent untouched")
             continue
         migrated += 1
