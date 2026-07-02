@@ -127,14 +127,15 @@ def _crash_safe_move(transport: Any, src: str, dst: str) -> bool:
 
 
 def _run_retention(transport: Any, team: str, rows: list, *, now: str, today: str,
-                   days: float, log: Any) -> tuple[list, list[str]]:
+                   days: float, log: Any) -> tuple[list, list[str], dict]:
     """Archive terminal tasks older than ``days``: move the task doc to
     task/archive/<YYYY-MM>/ and its ack/response shards to _coord/archive/,
     verified move-not-delete, capped per pass, throttled to once per day."""
     notes: list[str] = []
+    archived_map: dict = {}  # slug -> (month, title), for the log's Archived bullets
     marker = transport.read(_retention_marker_path(team))
     if marker is not None and today in marker:
-        return rows, notes  # already ran today
+        return rows, notes, archived_map  # already ran today
     keep: list = []
     archived = 0
     for r in rows:
@@ -145,11 +146,17 @@ def _run_retention(transport: Any, team: str, rows: list, *, now: str, today: st
                 and r.get("status") in model.TERMINAL_STATUSES and ts):
             slug = str(r.get("name"))
             month = str(ts)[:7]  # YYYY-MM
+            # malformed timestamp would mint a garbage archive dir — keep hot instead
+            if len(month) != 7 or month[4] != "-" or not (month[:4] + month[5:]).isdigit():
+                notes.append(f"retention: {slug} has a non-ISO timestamp; kept hot")
+                keep.append(r)
+                continue
             src = f"{task_prefix(team)}{slug}.md"
             dst = f"{archive_prefix(team)}{month}/{slug}.md"
             if _verified_copy(transport, src, dst):
                 shards_moved = True
                 archived += 1
+                archived_map[slug] = (month, r.get("title") or slug)
                 # move coordination shards WITH the task (plan-review requirement)
                 for kind in ("acks", "responses"):
                     pfx = f"team/{team}/_coord/{kind}/{slug}/"
@@ -177,7 +184,7 @@ def _run_retention(transport: Any, team: str, rows: list, *, now: str, today: st
                         json.dumps({"last_run": today, "archived": archived}))
     if archived:
         log.info("retention", team=team, archived=archived)
-    return keep, notes
+    return keep, notes, archived_map
 
 
 def _load_prior_aggregate(transport: Any, team: str) -> Optional[dict[str, Any]]:
@@ -254,6 +261,7 @@ def reconcile(
         parsed += 1
 
     # --- retention sub-pass (OPTIONAL: only when configured) ---
+    archived_map: dict = {}
     if retention_days is None:
         retention_days = os.environ.get("COORD_RETENTION_DAYS")
     if retention_days and rows:
@@ -262,9 +270,9 @@ def reconcile(
         except (TypeError, ValueError):
             days = 0
         if days > 0:
-            rows, notes = _run_retention(transport, team, rows, now=now, today=today,
-                                         days=days, log=log)
-            warnings.extend(n for n in notes if "FAILED" in n)
+            rows, notes, archived_map = _run_retention(
+                transport, team, rows, now=now, today=today, days=days, log=log)
+            warnings.extend(n for n in notes if "FAILED" in n or "kept hot" in n)
 
     # --- ack fold + shard-GC sub-pass ---
     acks, gc_count = _fold_and_gc_acks(transport, team, {r.get("name") for r in rows}, now=now)
@@ -277,7 +285,12 @@ def reconcile(
     if not transport.write(index_path(team), okf.render_index(rows)):
         warnings.append("index.md write failed")
 
-    transitions = aggregate.diff_rows(prior_rows, rows)
+    prior_for_diff = [r for r in prior_rows if str(r.get("name")) not in archived_map]
+    transitions = aggregate.diff_rows(prior_for_diff, rows)
+    transitions += [
+        f"* **Archived**: [{title}](archive/{month}/{slug}.md) → archive/{month}/."
+        for slug, (month, title) in sorted(archived_map.items())
+    ]
     if transitions:
         existing_log = transport.read(log_path(team))
         if not transport.write(
