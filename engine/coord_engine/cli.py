@@ -235,16 +235,20 @@ def _task_apply(args, transport, **kw) -> int:
     try:
         out = tasks.apply_update(transport.read(path), now=_iso(_now()), **kw)
     except tasks.TaskError as e:
-        print(f"task {args.verb} failed: {e}", file=sys.stderr)
+        verb = getattr(args, "verb", getattr(args, "task_command", "update"))
+        print(f"task {verb} failed: {e}", file=sys.stderr)
         return 1
     transport.write(path, out)
-    print(f"{args.verb} {args.name}")
+    print(f"{getattr(args, 'verb', 'updated')} {args.name}")
     return 0
 
 
 def cmd_task_block(args: argparse.Namespace, transport: Any) -> int:
     if not args.blocked_on and not args.on_user:
         print("task block failed: requires --blocked-on or --on-user", file=sys.stderr)
+        return 1
+    if args.blocked_on and args.on_user:
+        print("task block failed: pass --blocked-on OR --on-user, not both", file=sys.stderr)
         return 1
     kw = {"status": "blocked", "blocked_on": args.on_user or args.blocked_on}
     if args.on_user:

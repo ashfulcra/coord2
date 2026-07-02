@@ -120,7 +120,8 @@ def apply_update(
     fm["timestamp"] = now
     note = f"{now}: {old_status} → {fm['status']}" if status else f"{now}: updated"
     if evidence:
-        note += f" (evidence: {evidence})"
+        label = "reason" if status == "abandoned" else "evidence"
+        note += f" ({label}: {evidence})"
     tail = (body.rstrip() + f"\n\n- {note}\n") if body.strip() else f"- {note}\n"
     return okf.render_frontmatter(fm) + "\n\n" + tail.lstrip("\n")
 

@@ -254,3 +254,18 @@ def test_cli_task_abandon_terminal_blocks_further(capsys):
     capsys.readouterr()
     assert cli.main(["task", "assign", "r", "z", "x"], transport=t) == 0  # assign w/o status change ok on terminal
     assert cli.main(["task", "pause", "r", "z", "-n", "x"], transport=t) == 1  # no transition out of terminal
+
+
+def test_cli_task_abandon_note_says_reason(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "R"], transport=t)
+    cli.main(["task", "abandon", "r", "r", "-r", "superseded"], transport=t)
+    assert "(reason: superseded)" in t.store["team/r/task/r.md"]
+
+
+def test_cli_task_block_rejects_both_flags(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "B", "--status", "active"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["task", "block", "r", "b", "--blocked-on", "x", "--on-user", "y"], transport=t) == 1
+    assert "not both" in capsys.readouterr().err
