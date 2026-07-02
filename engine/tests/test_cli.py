@@ -350,6 +350,19 @@ def test_cli_tell_inbox_ack_flow(capsys):
     assert [r["name"] for r in _j.loads(capsys.readouterr().out)] == ["all-hands"]
 
 
+def test_cli_inbox_ack_hides_before_reconcile(capsys):
+    import json as _j
+    t = FakeTransport()
+    cli.main(["tell", "r", "amy", "Immediate hide"], transport=t)
+    cli.main(["reconcile", "r"], transport=t)
+    capsys.readouterr()
+
+    cli.main(["inbox", "r", "-a", "amy", "--ack", "immediate-hide"], transport=t)
+    capsys.readouterr()
+    cli.main(["inbox", "r", "-a", "amy", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out) == []
+
+
 def test_cli_remind_hidden_until_when(capsys):
     import json as _j
     t = FakeTransport()
@@ -396,6 +409,20 @@ def test_cli_respond_closes_and_records(capsys):
     assert "closed" in out
     assert okf.parse_frontmatter(t.store["team/r/task/question.md"])["status"] == "done"
     assert any(p.startswith("team/r/_coord/responses/question/") for p in t.store)
+
+
+def test_cli_respond_response_paths_do_not_collide(monkeypatch, capsys):
+    from datetime import datetime, timezone
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Waiting", "--status", "waiting"], transport=t)
+    fixed = datetime(2026, 7, 2, 13, 30, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(cli, "_now", lambda: fixed)
+
+    assert cli.main(["respond", "r", "waiting", "-o", "noted", "-a", "amy"], transport=t) == 0
+    assert cli.main(["respond", "r", "waiting", "-o", "noted", "-a", "bob"], transport=t) == 0
+    capsys.readouterr()
+    paths = [p for p in t.store if p.startswith("team/r/_coord/responses/waiting/")]
+    assert len(paths) == 2
 
 
 def test_reconcile_gcs_orphaned_ack_shards(capsys):

@@ -393,6 +393,11 @@ def _response_path(team: str, slug: str, stamp: str) -> str:
     return f"team/{team}/_coord/responses/{slug}/{stamp}.md"
 
 
+def _stamp_for_path(now: str, agent: str) -> str:
+    safe_time = now.replace(":", "").replace("-", "").replace(".", "")
+    return f"{safe_time}-{tasks.agent_key(agent)}"
+
+
 def _create_directive(args: argparse.Namespace, transport: Any, *, assignee: str,
                       not_before: Optional[str] = None) -> int:
     try:
@@ -462,6 +467,12 @@ def cmd_inbox(args: argparse.Namespace, transport: Any) -> int:
         return 0
     rows = _load_rows(transport, args.team)
     acks = {str(r.get("name")): (r.get("acked_by") or []) for r in rows}
+    stale_visible = directives.inbox(rows, acks, agent, now=_iso(_now()),
+                                     include_backlog=args.all)
+    for r in stale_visible:
+        slug = str(r.get("name") or "")
+        if agent not in (acks.get(slug) or []) and transport.read(_ack_path(args.team, slug, agent)):
+            acks.setdefault(slug, []).append(agent)
     got = directives.inbox(rows, acks, agent, now=_iso(_now()),
                            include_backlog=args.all)
     if args.json:
@@ -476,7 +487,7 @@ def cmd_inbox(args: argparse.Namespace, transport: Any) -> int:
 def cmd_respond(args: argparse.Namespace, transport: Any) -> int:
     agent = args.agent or _host()
     now = _iso(_now())
-    stamp = now.replace(":", "").replace("-", "")[:15]
+    stamp = _stamp_for_path(now, agent)
     fm = {"type": "Response", "agent": agent, "outcome": args.outcome, "timestamp": now}
     transport.write(_response_path(args.team, args.name, stamp),
                     okf.render_frontmatter(fm) + f"\n{args.evidence or args.outcome}\n")
