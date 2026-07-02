@@ -107,14 +107,22 @@ def _retention_marker_path(team: str) -> str:
     return f"team/{team}/_coord/retention/last-run.json"
 
 
-def _crash_safe_move(transport: Any, src: str, dst: str) -> bool:
-    """Copy -> verify -> delete (the incumbent's archival discipline: never a
-    window where the doc exists nowhere)."""
+def _verified_copy(transport: Any, src: str, dst: str) -> bool:
+    if transport.read(dst) is not None:
+        return False
     content = transport.read(src)
     if content is None or not transport.write(dst, content):
         return False
     if transport.read(dst) != content:
         return False  # verify failed; leave the original in place
+    return True
+
+
+def _crash_safe_move(transport: Any, src: str, dst: str) -> bool:
+    """Copy -> verify -> delete (the incumbent's archival discipline: never a
+    window where the doc exists nowhere)."""
+    if not _verified_copy(transport, src, dst):
+        return False
     return transport.delete(src) if hasattr(transport, "delete") else False
 
 
@@ -130,14 +138,17 @@ def _run_retention(transport: Any, team: str, rows: list, *, now: str, today: st
     keep: list = []
     archived = 0
     for r in rows:
-        old_enough = age_hours(r.get("timestamp"), now) > days * 24.0
+        ts = r.get("timestamp")
+        age = age_hours(ts, now)
+        old_enough = age != float("inf") and age > days * 24.0
         if (archived < RETENTION_CAP_PER_PASS and old_enough
-                and r.get("status") in model.TERMINAL_STATUSES and r.get("timestamp")):
+                and r.get("status") in model.TERMINAL_STATUSES and ts):
             slug = str(r.get("name"))
-            month = str(r.get("timestamp"))[:7]  # YYYY-MM
+            month = str(ts)[:7]  # YYYY-MM
             src = f"{task_prefix(team)}{slug}.md"
             dst = f"{archive_prefix(team)}{month}/{slug}.md"
-            if _crash_safe_move(transport, src, dst):
+            if _verified_copy(transport, src, dst):
+                shards_moved = True
                 archived += 1
                 # move coordination shards WITH the task (plan-review requirement)
                 for kind in ("acks", "responses"):
@@ -146,15 +157,22 @@ def _run_retention(transport: Any, team: str, rows: list, *, now: str, today: st
                         for f in transport.list_dir(pfx):
                             fn = f.get("name") or ""
                             if not f.get("is_dir") and fn:
-                                _crash_safe_move(transport, pfx + fn,
-                                                 f"team/{team}/_coord/archive/{kind}/{slug}/{fn}")
+                                if not _crash_safe_move(
+                                    transport, pfx + fn,
+                                    f"team/{team}/_coord/archive/{kind}/{slug}/{fn}"
+                                ):
+                                    shards_moved = False
                     except TransportError:
-                        pass
-                notes.append(f"retention: archived {slug} -> archive/{month}/")
-                continue
+                        shards_moved = False
+                if shards_moved and hasattr(transport, "delete") and transport.delete(src):
+                    notes.append(f"retention: archived {slug} -> archive/{month}/")
+                    continue
+                archived -= 1
+                if hasattr(transport, "delete"):
+                    transport.delete(dst)
             notes.append(f"retention: move FAILED for {slug}; kept")
         keep.append(r)
-    if archived or marker is None:
+    if marker is None or today not in marker:
         transport.write(_retention_marker_path(team),
                         json.dumps({"last_run": today, "archived": archived}))
     if archived:

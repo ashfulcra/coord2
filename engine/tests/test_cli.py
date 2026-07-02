@@ -519,6 +519,46 @@ def test_retention_off_by_default_and_daily_throttle(capsys):
     assert "team/r/task/olddone2.md" in t.store                    # throttled today
 
 
+def test_retention_throttles_zero_archive_days_after_prior_marker(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/_coord/retention/last-run.json",
+          _j.dumps({"last_run": "2026-07-01", "archived": 9}))
+    t.put("team/r/task/fresh.md", "---\ntype: Task\ntitle: F\nstatus: active\n---\n")
+
+    cli.main(["reconcile", "r", "--retention-days", "30"], transport=t)
+    marker = _j.loads(t.store["team/r/_coord/retention/last-run.json"])
+    assert marker == {"last_run": "2026-07-02", "archived": 0}
+
+
+def test_retention_ignores_unparseable_timestamps(capsys):
+    t = FakeTransport()
+    t.put("team/r/task/badtime.md",
+          "---\ntype: Task\ntitle: Badtime\nstatus: done\ntimestamp: not-a-time\n---\n")
+
+    cli.main(["reconcile", "r", "--retention-days", "30"], transport=t)
+    assert "team/r/task/badtime.md" in t.store
+    assert not any(p.startswith("team/r/task/archive/not-a-") for p in t.store)
+
+
+def test_retention_keeps_hot_task_when_shard_move_fails(capsys):
+    class FailShardArchiveTransport(FakeTransport):
+        def write(self, path, content):
+            if path.startswith("team/r/_coord/archive/acks/"):
+                return False
+            return super().write(path, content)
+
+    t = FailShardArchiveTransport()
+    t.put("team/r/task/olddone.md", _old_done_task("Olddone"))
+    t.put("team/r/_coord/acks/olddone/amy-abc123.md",
+          "---\ntype: Ack\nagent: amy\ntimestamp: 2020-01-16T00:00:00Z\n---\n")
+
+    cli.main(["reconcile", "r", "--retention-days", "30"], transport=t)
+    assert "team/r/task/olddone.md" in t.store
+    assert "team/r/task/archive/2020-01/olddone.md" not in t.store
+    assert "team/r/_coord/acks/olddone/amy-abc123.md" in t.store
+
+
 def test_task_restore_and_search_archived(capsys):
     import json as _j
     t = FakeTransport()
