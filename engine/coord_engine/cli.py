@@ -552,6 +552,158 @@ def cmd_respond(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- continuity completion (A6): role checkpoints, park, briefing ---
+
+def _set_role_field(transport: Any, team: str, role: str, key: str, value: str) -> bool:
+    """Read-modify-write one frontmatter field on a role doc, preserving the rest."""
+    path = _role_doc_path(team, role)
+    doc = transport.read(path)
+    fm = okf.parse_frontmatter(doc)
+    if fm is None:
+        return False
+    split = okf.split_frontmatter(doc or "")
+    body = split[1] if split else ""
+    fm[key] = value
+    return transport.write(path, okf.render_frontmatter(fm) + "\n" + body.lstrip("\n"))
+
+
+def cmd_continuity_checkpoint(args: argparse.Namespace, transport: Any) -> int:
+    if args.ref:
+        if not _set_role_field(transport, args.team, args.role, "checkpoint_ref", args.ref):
+            print(f"checkpoint failed: role {args.role} not found/parseable", file=sys.stderr)
+            return 1
+        print(f"checkpoint_ref for role {args.role} -> {args.ref}")
+        return 0
+    reg = okf.parse_frontmatter(transport.read(_role_doc_path(args.team, args.role))) or {}
+    ref = reg.get("checkpoint_ref")
+    if not ref:
+        print(f"role {args.role}: no checkpoint_ref set")
+        return 0
+    print(f"role {args.role}: checkpoint_ref = {ref}")
+    if "/continuity/" in str(ref):
+        raw = transport.read(str(ref))
+        try:
+            snap = json.loads(raw) if raw else None
+        except Exception:
+            snap = None
+        if snap:
+            print(continuity.render_resume(snap))
+    return 0
+
+
+def _held_roles(transport: Any, team: str, agent: str) -> list[str]:
+    """Roles where ``agent`` holds a FRESH lease (same freshness fold as roles status)."""
+    held: list[str] = []
+    now = _iso(_now())
+    try:
+        entries = transport.list_dir(f"team/{team}/roles/")
+    except TransportError:
+        return held
+    for e in entries:
+        n = e.get("name") or ""
+        if e.get("is_dir") or not n.endswith(".md") or n == "index.md":
+            continue
+        role = n[:-3]
+        reg = okf.parse_frontmatter(transport.read(_role_doc_path(team, role))) or {}
+        try:
+            sla = float(reg.get("sla_hours") or roles.DEFAULT_SLA_HOURS)
+        except (TypeError, ValueError):
+            sla = roles.DEFAULT_SLA_HOURS
+        lease = okf.parse_frontmatter(
+            transport.read(f"{_leases_prefix(team, role)}{tasks.agent_key(agent)}.md")) or {}
+        if lease and roles.age_hours(lease.get("timestamp"), now) <= sla:
+            held.append(role)
+    return held
+
+
+def cmd_continuity_park(args: argparse.Namespace, transport: Any) -> int:
+    """Session-exit checkpoint: snapshot every role the agent holds and point
+    each role's checkpoint_ref at it. The incumbent's `park`."""
+    agent = args.agent or _host()
+    now = _iso(_now())
+    held = _held_roles(transport, args.team, agent)
+    if not held:
+        print(f"park: {agent} holds no fresh roles in team/{args.team} — nothing to park")
+        return 0
+    for role in held:
+        task_slug = f"role-{tasks.slugify(role)}"
+        snap = continuity.build_snapshot(
+            agent=agent, task=task_slug,
+            objective=args.objective or f"parked role {role} at session exit",
+            now=now, next_actions=args.next or [],
+            open_questions=args.open_question or [],
+        )
+        path = _continuity_path(args.team, agent, task_slug)
+        if not transport.write(path, json.dumps(snap, indent=2)):
+            print(f"park: snapshot write FAILED for {role}; checkpoint_ref left unchanged",
+                  file=sys.stderr)
+            continue
+        if not _set_role_field(transport, args.team, role, "checkpoint_ref", path):
+            print(f"park: checkpoint_ref update FAILED for {role}", file=sys.stderr)
+            continue
+        print(f"parked {role} -> {path}")
+    return 0
+
+
+def cmd_briefing(args: argparse.Namespace, transport: Any) -> int:
+    """One-call session-start bundle. Every section tolerates absent add-ons."""
+    agent = args.agent or _host()
+    now = _iso(_now())
+    out: dict[str, Any] = {"schema": "coord.teams.briefing.v1", "team": args.team,
+                           "agent": agent, "at": now}
+    rows = _load_rows(transport, args.team)
+    try:
+        out["presence"] = presence.roster(_presence_shards(transport, args.team), now=now)
+    except Exception as e:
+        print(f"briefing: presence section unavailable ({type(e).__name__})", file=sys.stderr)
+        out["presence"] = []
+    try:
+        out["board"] = query.board(rows)
+    except Exception as e:
+        print(f"briefing: board section unavailable ({type(e).__name__})", file=sys.stderr)
+        out["board"] = {}
+    try:
+        acks = {str(r.get("name")): (r.get("acked_by") or []) for r in rows}
+        out["inbox"] = directives.inbox(rows, acks, agent, now=now)
+    except Exception as e:
+        print(f"briefing: inbox section unavailable ({type(e).__name__})", file=sys.stderr)
+        out["inbox"] = []
+    try:
+        out["needs_me"] = query.needs_me(rows, agent, now=now)
+    except Exception as e:
+        print(f"briefing: needs_me section unavailable ({type(e).__name__})", file=sys.stderr)
+        out["needs_me"] = []
+    try:
+        snaps = []
+        for e in transport.list_dir(_continuity_prefix(args.team, agent)):
+            n = (e.get("name") or "").rstrip("/")
+            if e.get("is_dir") and n:
+                raw = transport.read(_continuity_path(args.team, agent, n))
+                if raw:
+                    try:
+                        snaps.append(json.loads(raw))
+                    except Exception:
+                        pass
+        out["resume"] = continuity.latest(snaps)
+    except Exception as e:
+        print(f"briefing: resume section unavailable ({type(e).__name__})", file=sys.stderr)
+        out["resume"] = None
+    if args.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    print(f"briefing — {agent} in team/{args.team}")
+    live = [p["agent"] for p in out["presence"] if p.get("liveness") == "live"]
+    print(f"  live now: {', '.join(live) if live else '(nobody)'}")
+    open_counts = {k: len(v) for k, v in (out["board"] or {}).items() if v}
+    print("  board: " + (", ".join(f"{k}={v}" for k, v in open_counts.items()) or "empty"))
+    print(f"  inbox: {len(out['inbox'])} item(s)")
+    for r in out["inbox"][:5]:
+        print(_line(r))
+    print(f"  needs-me: {len(out['needs_me'])} item(s)")
+    print(continuity.render_resume(out["resume"]))
+    return 0
+
+
 # --- presence (fulcra-agent-presence) ---
 
 def _presence_prefix(team: str) -> str:
@@ -861,6 +1013,10 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("team", nargs="?")
     dr.set_defaults(func=cmd_doctor)
 
+    bf = sub.add_parser("briefing", help="one-call session-start bundle (tolerates absent add-ons)")
+    bf.add_argument("team"); bf.add_argument("--agent", "-a"); add_json(bf)
+    bf.set_defaults(func=cmd_briefing)
+
     dg = sub.add_parser("digest", help="operator digest: blocked-on-you / upcoming / agents / stale")
     dg.add_argument("team"); dg.add_argument("--human"); add_json(dg)
     dg.add_argument("--store", action="store_true",
@@ -929,6 +1085,14 @@ def build_parser() -> argparse.ArgumentParser:
     cts.add_argument("--context-percent", type=float, dest="context_percent")
     cts.add_argument("--transcript", dest="transcript")
     cts.set_defaults(func=cmd_continuity_snapshot)
+    ctc = ctsub.add_parser("checkpoint", help="get/set a role's durable checkpoint_ref")
+    ctc.add_argument("team"); ctc.add_argument("--role", required=True); ctc.add_argument("--ref")
+    ctc.set_defaults(func=cmd_continuity_checkpoint)
+    ctp = ctsub.add_parser("park", help="session-exit: snapshot every held role + set checkpoint_refs")
+    ctp.add_argument("team"); ctp.add_argument("--agent", "-a"); ctp.add_argument("--objective")
+    ctp.add_argument("--next", action="append"); ctp.add_argument("--open-question", action="append", dest="open_question")
+    ctp.set_defaults(func=cmd_continuity_park)
+
     ctr = ctsub.add_parser("resume", help="print a resume brief from the latest snapshot")
     ctr.add_argument("team"); ctr.add_argument("agent"); ctr.add_argument("task", nargs="?")
     ctr.add_argument("--json", action="store_true")

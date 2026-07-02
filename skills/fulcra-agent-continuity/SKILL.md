@@ -46,6 +46,18 @@ uv tool run coord-engine continuity resume <team> <agent> <task>
 uv tool run coord-engine continuity resume <team> <agent>          # newest across all the agent's tasks
 ```
 
+## Role checkpoints, park, and briefing (A6)
+```bash
+uv tool run coord-engine continuity checkpoint <team> --role <r> [--ref PATH]  # get/set the role's durable resume point
+uv tool run coord-engine continuity park <team> [--agent X] [--objective "…"]  # session exit: snapshot EVERY held role + set its checkpoint_ref
+uv tool run coord-engine briefing <team> [--agent X] [--json]                  # session start: presence + board + inbox + needs-me + latest snapshot in ONE call
+```
+- `park` is the session-exit verb: each role you hold (fresh lease) gets a snapshot and the role doc's
+  `checkpoint_ref` points at it — the next holder (or your next session) resumes from there via
+  `checkpoint --role`.
+- `briefing` is the session-start verb and **tolerates absent add-ons** — with no presence/directives
+  installed the sections are simply empty; it never fails a cold start.
+
 ## When to use
 - **Before context runs low** or at a natural stopping point — capture what you'd need to resume.
 - **On session end / hand-off** — the next session (or another agent picking up the work) resumes clean.
