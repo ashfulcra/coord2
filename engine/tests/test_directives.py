@@ -11,7 +11,7 @@ def _r(name, status="proposed", assignee=None, priority="P2", not_before=None):
 
 def test_parse_when_iso_passthrough():
     assert directives.parse_when("2026-08-01T00:00:00Z", now=NOW) == "2026-08-01T00:00:00Z"
-    assert directives.parse_when("2026-08-01", now=NOW) == "2026-08-01"
+    assert directives.parse_when("2026-08-01", now=NOW) == "2026-08-01T23:59:59Z"  # date-only -> end of day
 
 
 def test_parse_when_relative():

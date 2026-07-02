@@ -475,6 +475,10 @@ def cmd_inbox(args: argparse.Namespace, transport: Any) -> int:
             acks.setdefault(slug, []).append(agent)
     got = directives.inbox(rows, acks, agent, now=_iso(_now()),
                            include_backlog=args.all)
+    # read-your-write: an ack written since the last reconcile hides the item
+    # for the acking agent immediately (live shard check, only for shown items).
+    got = [r for r in got
+           if transport.read(_ack_path(args.team, str(r.get("name")), agent)) is None]
     if args.json:
         print(json.dumps(got, indent=2))
         return 0

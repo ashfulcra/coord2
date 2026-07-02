@@ -429,11 +429,53 @@ def test_reconcile_gcs_orphaned_ack_shards(capsys):
     t = FakeTransport()
     t.put("team/r/task/live.md", "---\ntype: Task\ntitle: L\nstatus: active\nassignee: amy\n---\n")
     t.put("team/r/_coord/acks/live/amy.md", "---\ntype: Ack\nagent: amy\n---\n")
-    t.put("team/r/_coord/acks/ghost/amy.md", "---\ntype: Ack\nagent: amy\n---\n")
+    t.put("team/r/_coord/acks/ghost/amy.md",
+          "---\ntype: Ack\nagent: amy\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
     cli.main(["reconcile", "r"], transport=t)
-    assert "team/r/_coord/acks/ghost/amy.md" not in t.store   # GC'd
+    assert "team/r/_coord/acks/ghost/amy.md" not in t.store   # old+datable -> GC'd
     assert "team/r/_coord/acks/live/amy.md" in t.store        # kept
     import json as _j
     agg = _j.loads(t.store["team/r/_coord/summaries.json"])
     row = next(r for r in agg["rows"] if r["name"] == "live")
     assert row["acked_by"] == ["amy"]
+
+
+def test_reconcile_gc_grace_protects_recent_and_undatable(capsys):
+    # GC only deletes datable shards older than the grace window
+    t = FakeTransport()
+    t.put("team/r/task/live.md", "---\ntype: Task\ntitle: L\nstatus: active\n---\n")
+    t.put("team/r/_coord/acks/ghost/old.md",
+          "---\ntype: Ack\nagent: old\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
+    t.put("team/r/_coord/acks/ghost/recent.md",
+          f"---\ntype: Ack\nagent: recent\ntimestamp: {_now_iso()}\n---\n")
+    t.put("team/r/_coord/acks/ghost/undated.md", "---\ntype: Ack\nagent: undated\n---\n")
+    cli.main(["reconcile", "r"], transport=t)
+    assert "team/r/_coord/acks/ghost/old.md" not in t.store       # old + datable -> GC'd
+    assert "team/r/_coord/acks/ghost/recent.md" in t.store        # recent -> kept
+    assert "team/r/_coord/acks/ghost/undated.md" in t.store       # undatable -> kept
+
+
+def test_reconcile_gc_skips_when_no_live_tasks(capsys):
+    # catastrophic/empty listing must never trigger GC
+    t = FakeTransport()
+    t.put("team/r/_coord/acks/ghost/old.md",
+          "---\ntype: Ack\nagent: old\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
+    cli.main(["reconcile", "r"], transport=t)
+    assert "team/r/_coord/acks/ghost/old.md" in t.store
+
+
+def test_cli_inbox_ack_hides_immediately_pre_reconcile(capsys):
+    import json as _j
+    t = FakeTransport()
+    cli.main(["tell", "r", "amy", "Quick"], transport=t)
+    cli.main(["reconcile", "r"], transport=t)
+    cli.main(["inbox", "r", "-a", "amy", "--ack", "quick"], transport=t)
+    capsys.readouterr()
+    # NO reconcile between ack and read — live self-hide must apply
+    cli.main(["inbox", "r", "-a", "amy", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out) == []
+
+
+def test_parse_when_date_only_gates_until_end_of_day():
+    from coord_engine import directives
+    assert directives.parse_when("2026-07-02", now="2026-07-02T12:00:00Z") == "2026-07-02T23:59:59Z"

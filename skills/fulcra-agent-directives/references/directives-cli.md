@@ -29,3 +29,8 @@ timestamp: 2026-07-02T12:00:00Z
 ```
 The filename key is collision-safe (`slug+sha1[:6]`); reconcile trusts the frontmatter `agent:` only when
 it round-trips to the filename. Response shards live at `_coord/responses/<slug>/<stamp>.md`.
+
+Notes: if an agent's raw id changes, its `agent_key` changes and old acks stop applying (it gets
+re-notified under the new identity — intentional). `respond` performs no assignee authorization — anyone
+on the team can close a directive (the File Store write ACL is the trust boundary). Reconcile GC only
+deletes ack shards that are datable AND older than 24h AND whose task is absent from a non-empty listing.
