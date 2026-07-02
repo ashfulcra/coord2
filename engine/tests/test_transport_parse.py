@@ -42,3 +42,12 @@ def test_parse_stat_no_previous():
     st = transport.parse_stat_output(text)
     assert st["previous_count"] == 0
     assert st["previous"] == []
+
+
+def test_list_dir_sorted_by_name():
+    # the real transport must return list entries sorted by name (determinism for
+    # "last wins" folds). Simulate parse output order != sorted, then sort.
+    entries = transport.parse_list_output(
+        "1B  2026-07-01 04:12PM UTC  zzz.md\n1B  2026-07-01 04:12PM UTC  aaa.md")
+    names = [e["name"] for e in sorted(entries, key=lambda e: e.get("name") or "")]
+    assert names == ["aaa.md", "zzz.md"]

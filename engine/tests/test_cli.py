@@ -108,3 +108,34 @@ def test_cli_task_update_done_needs_evidence(capsys):
     assert cli.main(["task", "update", "r", "t", "--status", "done"], transport=t) == 1
     assert "done requires evidence" in capsys.readouterr().err
     assert cli.main(["task", "update", "r", "t", "--status", "done", "-e", "ok"], transport=t) == 0
+
+
+def test_cli_review_status(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/review/pr-9.md", "---\ntype: Review\nrequired: alice, bob\n---\n")
+    t.put("team/r/review/pr-9/verdicts/alice.md",
+          "---\ntype: Verdict\nreviewer: alice\nverdict: approve\n---\n")
+    assert cli.main(["review", "status", "r", "pr-9", "--json"], transport=t) == 0
+    res = _j.loads(capsys.readouterr().out)
+    assert res["state"] == "PENDING" and res["pending_required"] == ["bob"]
+    t.put("team/r/review/pr-9/verdicts/bob.md",
+          "---\ntype: Verdict\nreviewer: bob\nverdict: changes\n---\n")
+    cli.main(["review", "status", "r", "pr-9", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out)["state"] == "CHANGES"
+
+
+def test_cli_review_keys_by_filename_not_frontmatter(capsys):
+    # a file claiming someone else's reviewer name must NOT shadow their verdict
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/review/pr-1.md", "---\ntype: Review\nrequired: alice\n---\n")
+    t.put("team/r/review/pr-1/verdicts/alice.md",
+          "---\ntype: Verdict\nreviewer: alice\nverdict: changes\n---\n")
+    t.put("team/r/review/pr-1/verdicts/mallory.md",   # claims to be alice, approving
+          "---\ntype: Verdict\nreviewer: alice\nverdict: approve\n---\n")
+    cli.main(["review", "status", "r", "pr-1", "--json"], transport=t)
+    res = _j.loads(capsys.readouterr().out)
+    # alice's real changes still blocks; mallory counts as her own (approve) reviewer
+    assert res["state"] == "CHANGES"
+    assert "alice" in res["changes"] and "mallory" in res["approvals"]

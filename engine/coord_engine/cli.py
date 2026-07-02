@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, okf, query, roles, tasks
+from . import aggregate, okf, query, review, roles, tasks
 from . import reconcile as rec
 from .transport import FulcraFileTransport, TransportError
 
@@ -237,6 +237,52 @@ def cmd_task_done(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- review (fulcra-agent-review verdict tally) ---
+
+def _review_doc_path(team: str, slug: str) -> str:
+    return f"team/{team}/review/{slug}.md"
+
+
+def _verdicts_prefix(team: str, slug: str) -> str:
+    return f"team/{team}/review/{slug}/verdicts/"
+
+
+def cmd_review_status(args: argparse.Namespace, transport: Any) -> int:
+    team, slug = args.team, args.slug
+    req_doc = okf.parse_frontmatter(transport.read(_review_doc_path(team, slug))) or {}
+    required = req_doc.get("required")
+    if isinstance(required, str):
+        required = [r.strip() for r in required.split(",") if r.strip()]
+    elif isinstance(required, list):
+        required = [str(r).strip() for r in required if str(r).strip()]
+    verdicts: list[dict[str, Any]] = []
+    try:
+        for e in transport.list_dir(_verdicts_prefix(team, slug)):
+            n = e.get("name") or ""
+            if e.get("is_dir") or not n.endswith(".md"):
+                continue
+            fm = okf.parse_frontmatter(transport.read(_verdicts_prefix(team, slug) + n)) or {}
+            # Key by the FILENAME stem (ACL-controlled path), not the frontmatter
+            # `reviewer:` — otherwise a file `mallory.md` claiming `reviewer: alice`
+            # could shadow alice's real verdict. One verdict file per reviewer.
+            verdicts.append({"reviewer": n[:-3], "verdict": fm.get("verdict")})
+    except TransportError:
+        pass
+    result = review.tally(verdicts, required=required)
+    result.update({"team": team, "slug": slug})
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"review {slug} in team/{team}: {result['state']}")
+        if result["approvals"]:
+            print("  approvals: " + ", ".join(result["approvals"]))
+        if result["changes"]:
+            print("  changes requested: " + ", ".join(result["changes"]))
+        if result["pending_required"]:
+            print("  awaiting required: " + ", ".join(result["pending_required"]))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -286,6 +332,12 @@ def build_parser() -> argparse.ArgumentParser:
     tdn = tksub.add_parser("done", help="mark done (requires evidence)")
     tdn.add_argument("team"); tdn.add_argument("name"); tdn.add_argument("--evidence", "-e", required=True)
     tdn.set_defaults(func=cmd_task_done)
+
+    rv = sub.add_parser("review", help="review verdict tally (fulcra-agent-review)")
+    rvsub = rv.add_subparsers(dest="review_command", required=True)
+    rvs = rvsub.add_parser("status", help="APPROVED/CHANGES/PENDING from reviewers' verdicts")
+    rvs.add_argument("team"); rvs.add_argument("slug"); add_json(rvs)
+    rvs.set_defaults(func=cmd_review_status)
     return p
 
 

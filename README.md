@@ -33,7 +33,7 @@ consistency-critical folds live in the shared **`coord-engine`** tool the skills
 | **L1 ✅** | **`fulcra-agent-reconcile`** | `reconcile`/`status`/`board`/`needs-me`/`search` | self-healing `task/index.md`+`log.md`, queryable views |
 | **L4 ✅** | **`fulcra-agent-roles`** | `roles status` | roles + leases + HELD/VACANT/CONTESTED fold + SLA escalation-due |
 | **L2 ✅** | **`fulcra-agent-tasks`** | `task start/update/done` | typed status/priority/assignee lifecycle + validated state machine |
-| L5 | `fulcra-agent-review` | `review …` | review handshake + verdict tally |
+| **L5 ✅** | **`fulcra-agent-review`** | `review status` | review handshake + APPROVED/CHANGES/PENDING verdict tally |
 | L6 | `fulcra-agent-continuity` | `continuity …` | structured resumable snapshots |
 | L7 | `fulcra-agent-automation` | — | heartbeat / listener / wake installers |
 
@@ -41,11 +41,11 @@ Reconcile is the linchpin (queryability + self-healing). The roles fold and reco
 OKF parser + transport — one implementation, no drift.
 
 ## Status
-**`coord-engine` v0.2.0 + three skills built** — `fulcra-agent-reconcile`, `fulcra-agent-roles`,
-`fulcra-agent-tasks`. **84 engine tests** + a live end-to-end run of reconcile/queries against the real
+**`coord-engine` v0.3.0 + four skills built** — `fulcra-agent-reconcile`, `fulcra-agent-roles`,
+`fulcra-agent-tasks`, `fulcra-agent-review`. **95 engine tests** + a live end-to-end run of reconcile/queries against the real
 Fulcra File Store. Packaging decided (approach C) after independent + bus (Codex) review — both reviewers
 independently flagged the roles-fold-as-prose defect, now fixed; open decisions resolved in doc `03`.
-L5 (review), L6 (continuity), L7 (automation) not yet built.
+L6 (continuity), L7 (automation) not yet built.
 
 **Foundations validated (2026-07-01):** `fulcra-api file` is last-writer-wins + versions every upload
 (`stat` → version UUID + history; `restore` rolls back live files), `list` timestamps are minute-granular

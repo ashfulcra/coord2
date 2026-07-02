@@ -98,7 +98,9 @@ class FulcraFileTransport:
         cp = self._run(["list", prefix])
         if cp.returncode != 0:
             raise TransportError(f"list {prefix} failed: {cp.stderr.strip()}")
-        return parse_list_output(cp.stdout)
+        # `fulcra-api file list` order is not guaranteed stable; sort by name so
+        # every consumer sees a deterministic order (matters wherever "last wins").
+        return sorted(parse_list_output(cp.stdout), key=lambda e: e.get("name") or "")
 
     def read(self, path: str) -> Optional[str]:
         cp = self._run(["download", path, "-"])
