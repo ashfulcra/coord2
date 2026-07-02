@@ -40,7 +40,8 @@ Schedule an inbox check so directed work reaches you without polling:
 ./scripts/install-listener.sh --uninstall <team> <agent>
 ```
 Each tick runs `coord-engine inbox --agent <agent>`; on NEW items it posts a macOS notification (or a
-log line) and, only if you consented to `--wake-cmd` at install, runs your wake command. Hardened like
+log line) and, only if you consented to `--wake-cmd` at install, runs your wake command. Note: `--yes` skips BOTH the schedule prompt and the wake-command acknowledgement — only use it when
+that consent was already given. Hardened like
 the heartbeat: validated inputs, pinned `PATH`/`HOME` (scheduled jobs source no profile — the parent
 project's wake silently 401'd on exactly this), `plutil` lint, install-time self-test.
 

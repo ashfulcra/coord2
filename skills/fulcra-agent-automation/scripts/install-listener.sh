@@ -14,7 +14,10 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --yes) YES=1;;
     --uninstall) UNINSTALL=1;;
-    --wake-cmd) WAKE_CMD="${2:?--wake-cmd needs a command}"; shift;;
+    --wake-cmd) WAKE_CMD="${2:?--wake-cmd needs a command}"
+                case "$WAKE_CMD" in *"'"*|*"<"*|*">"*)
+                  echo "error: --wake-cmd may not contain single quotes or angle brackets" >&2; exit 2;;
+                esac; shift;;
     --*) echo "unknown option: $1" >&2; exit 2;;
     *) POS+=("$1");;
   esac
@@ -29,21 +32,23 @@ INTERVAL="${POS[2]:-10}"
 [[ "$AGENT" =~ ^[A-Za-z0-9:_.-]+$ ]] || { echo "error: agent must match [A-Za-z0-9:_.-]+" >&2; exit 2; }
 [[ "$INTERVAL" =~ ^[0-9]+$ ]] && (( INTERVAL >= 1 )) || { echo "error: interval must be a positive integer" >&2; exit 2; }
 
-SAFE_AGENT="$(printf '%s' "$AGENT" | tr -c 'A-Za-z0-9_.-' '-')"
+SAFE_AGENT="$(printf '%s' "$AGENT" | tr -c 'A-Za-z0-9_.-' '-')-$(printf '%s' "$AGENT" | cksum | cut -d' ' -f1)"
 LABEL="com.fulcra.coord-engine.listener.${TEAM}.${SAFE_AGENT}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TICK="$SCRIPT_DIR/listener-tick.sh"
 
 CE="$(command -v coord-engine || true)"
+FA="$(command -v fulcra-api || true)"
 if [[ "$UNINSTALL" != "1" ]]; then
   [[ -n "$CE" ]] || { echo "error: coord-engine not found on PATH" >&2; exit 3; }
+  [[ -n "$FA" ]] || { echo "error: fulcra-api not found on PATH (the inbox fold needs it)" >&2; exit 3; }
   [[ -x "$TICK" ]] || { echo "error: listener-tick.sh not found/executable next to installer" >&2; exit 3; }
   if [[ -n "$WAKE_CMD" && "$YES" != "1" ]]; then
     read -r -p "Wake command will run UNATTENDED on new inbox items: '$WAKE_CMD' — allow? [y/N] " a || true
     [[ "$a" == "y" || "$a" == "Y" ]] || { echo "aborted."; exit 0; }
   fi
 fi
-JOB_PATH="$(dirname "${CE:-/usr/bin/true}"):/usr/local/bin:/usr/bin:/bin"
+JOB_PATH="$(dirname "${CE:-/usr/bin/true}"):$(dirname "${FA:-/usr/bin/true}"):/usr/local/bin:/usr/bin:/bin"
 
 confirm() { [[ "$YES" == "1" ]] && return 0; read -r -p "$1 [y/N] " a || true; [[ "$a" == "y" || "$a" == "Y" ]]; }
 
