@@ -160,3 +160,12 @@ def test_cli_continuity_resume_picks_latest_across_tasks(capsys):
     # no task arg -> fold to the newest across the member's snapshots
     cli.main(["continuity", "resume", "r", "ash"], transport=t)
     assert "newest" in capsys.readouterr().out
+
+
+def test_cli_continuity_slugifies_task(capsys):
+    t = FakeTransport()
+    cli.main(["continuity", "snapshot", "r", "ash", "feat/Sub Task", "--objective", "x"], transport=t)
+    capsys.readouterr()
+    assert "team/r/member/ash/continuity/feat-sub-task/latest.json" in t.store
+    cli.main(["continuity", "resume", "r", "ash"], transport=t)
+    assert "objective: x" in capsys.readouterr().out

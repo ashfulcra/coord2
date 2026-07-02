@@ -294,20 +294,21 @@ def _continuity_prefix(team: str, agent: str) -> str:
 
 
 def cmd_continuity_snapshot(args: argparse.Namespace, transport: Any) -> int:
+    task = tasks.slugify(args.task)  # single path segment; a slash breaks the no-task fold
     snap = continuity.build_snapshot(
-        agent=args.agent, task=args.task, objective=args.objective, now=_iso(_now()),
+        agent=args.agent, task=task, objective=args.objective, now=_iso(_now()),
         decisions=args.decision, next_actions=args.next, open_questions=args.open_question,
         artifacts=args.artifact, context_used_percent=args.context_percent,
         transcript_path=args.transcript,
     )
-    transport.write(_continuity_path(args.team, args.agent, args.task), json.dumps(snap, indent=2))
+    transport.write(_continuity_path(args.team, args.agent, task), json.dumps(snap, indent=2))
     print(f"snapshot {snap['checkpoint_id']}")
     return 0
 
 
 def cmd_continuity_resume(args: argparse.Namespace, transport: Any) -> int:
     if args.task:
-        raw = transport.read(_continuity_path(args.team, args.agent, args.task))
+        raw = transport.read(_continuity_path(args.team, args.agent, tasks.slugify(args.task)))
         try:
             snap = json.loads(raw) if raw else None
         except Exception:
