@@ -253,14 +253,19 @@ def cmd_review_status(args: argparse.Namespace, transport: Any) -> int:
     required = req_doc.get("required")
     if isinstance(required, str):
         required = [r.strip() for r in required.split(",") if r.strip()]
-    verdicts = []
+    elif isinstance(required, list):
+        required = [str(r).strip() for r in required if str(r).strip()]
+    verdicts: list[dict[str, Any]] = []
     try:
         for e in transport.list_dir(_verdicts_prefix(team, slug)):
             n = e.get("name") or ""
             if e.get("is_dir") or not n.endswith(".md"):
                 continue
             fm = okf.parse_frontmatter(transport.read(_verdicts_prefix(team, slug) + n)) or {}
-            verdicts.append({"reviewer": fm.get("reviewer") or n[:-3], "verdict": fm.get("verdict")})
+            # Key by the FILENAME stem (ACL-controlled path), not the frontmatter
+            # `reviewer:` — otherwise a file `mallory.md` claiming `reviewer: alice`
+            # could shadow alice's real verdict. One verdict file per reviewer.
+            verdicts.append({"reviewer": n[:-3], "verdict": fm.get("verdict")})
     except TransportError:
         pass
     result = review.tally(verdicts, required=required)

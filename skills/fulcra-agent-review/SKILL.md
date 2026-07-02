@@ -42,9 +42,11 @@ are prose over `fulcra-api file` + the teams inbox; the **verdict tally** is a `
 1. **Request** (author): write `review/<slug>.md`, then drop a short message into each reviewer's inbox
    (`team/<team>/member/<reviewer>/inbox/<YYYYMMDD-HHMMSS>_<author>_review-<slug>.md`) per the teams
    inbox lifecycle, pointing at the artifact + the review doc.
-2. **Verdict** (reviewer): write `review/<slug>/verdicts/<you>.md` with `verdict: approve|changes` and
-   notes, then drop a message into the author's inbox. To change your mind, re-upload your verdict file
-   (last verdict wins; the File Store keeps the history).
+2. **Verdict** (reviewer): write `review/<slug>/verdicts/<you>.md` (named after **you** — the filename
+   is the identity the tally uses) with `verdict: approve|changes` and notes, then drop a message into the
+   author's inbox. To change your mind, re-upload your verdict file (overwrites; the File Store keeps the
+   history). **Fail-closed:** a `changes` verdict keeps blocking until *that reviewer* re-uploads
+   `approve` — pushing a fix does **not** clear it; the reviewer must re-affirm.
 3. **Check state** (anyone) — deterministic fold, do not tally by hand:
    ```bash
    uv tool run coord-engine review status <team> <slug> --json
