@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, continuity, directives, health as health_mod, okf, presence, query, review, roles, tasks
+from . import aggregate, continuity, digest as digest_mod, directives, health as health_mod, okf, presence, query, review, roles, tasks
 from . import reconcile as rec
 from .transport import FulcraFileTransport, TransportError
 
@@ -693,6 +693,87 @@ def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
     return 0 if ok else 1
 
 
+# --- digest + escalate (fulcra-agent-health, A5b) ---
+
+def cmd_digest(args: argparse.Namespace, transport: Any) -> int:
+    now = _iso(_now())
+    rows = _load_rows(transport, args.team)
+    d = digest_mod.build(rows, _presence_shards(transport, args.team),
+                         now=now, human=args.human or _human())
+    if args.json:
+        print(json.dumps(d, indent=2))
+    else:
+        print(digest_mod.render(d), end="")
+    if args.store:
+        day = now[:10]
+        window = digest_mod.window_for(now)
+        marker = f"team/{args.team}/_coord/digests/{day}-{window}.md"
+        if transport.read(marker) is not None:
+            print(f"(digest for {day} {window} already stored — skipped)", file=sys.stderr)
+        else:
+            transport.write(marker, digest_mod.render(d))
+            print(f"stored digest -> _coord/digests/{day}-{window}.md", file=sys.stderr)
+    return 0
+
+
+def cmd_escalate(args: argparse.Namespace, transport: Any) -> int:
+    """Role-vacancy sweep: for every role doc, if vacancy past SLA and no marker
+    today, write the marker + a P1 directive to the role's maintainer.
+    Heartbeat-safe (idempotent per day)."""
+    now = _iso(_now()); today = _now().strftime("%Y-%m-%d")
+    escalated = checked = 0
+    try:
+        entries = transport.list_dir(f"team/{args.team}/roles/")
+    except TransportError:
+        print("escalate: roles dir unreadable", file=sys.stderr)
+        return 1
+    for e in entries:
+        n = e.get("name") or ""
+        if e.get("is_dir") or not n.endswith(".md") or n == "index.md":
+            continue
+        role = n[:-3]; checked += 1
+        reg = okf.parse_frontmatter(transport.read(_role_doc_path(args.team, role))) or {}
+        try:
+            sla = float(reg.get("sla_hours") or roles.DEFAULT_SLA_HOURS)
+        except (TypeError, ValueError):
+            sla = roles.DEFAULT_SLA_HOURS
+        leases: Optional[list[dict[str, Any]]] = []
+        try:
+            for f in transport.list_dir(_leases_prefix(args.team, role)):
+                fn = f.get("name") or ""
+                if not f.get("is_dir") and fn.endswith(".md"):
+                    fm = okf.parse_frontmatter(
+                        transport.read(_leases_prefix(args.team, role) + fn)) or {}
+                    leases.append({"agent": fm.get("agent") or fn[:-3],
+                                   "timestamp": fm.get("timestamp")})
+        except TransportError:
+            leases = None
+        marker_path = _escalation_marker_path(args.team, role, today)
+        marker_exists = transport.read(marker_path) is not None
+        if not roles.escalation_due(leases, now=now, sla_hours=sla,
+                                    marker_exists_today=marker_exists):
+            continue
+        maintainer = str(reg.get("maintainer") or _human())
+        transport.write(marker_path, okf.render_frontmatter(
+            {"type": "Escalation", "role": role, "timestamp": now}) + "\nescalated\n")
+        slug, content = tasks.new_task_doc(
+            f"ROLE VACANT {today}: {role} unattended past {sla:g}h SLA",
+            now=now, status="proposed", priority="P1", owner=_host(),
+            assignee=maintainer, kind="directive",
+            summary=f"Role {role} in team/{args.team} has no fresh lease past its SLA. "
+                    f"Claim it (coord-engine roles claim {args.team} {role}) or reassign.",
+        )
+        dst = _task_path(args.team, slug)
+        if transport.read(dst) is None:
+            transport.write(dst, content)
+            escalated += 1
+            print(f"escalated {role} -> {maintainer}")
+        else:
+            print(f"re-escalation suppressed for {role} (today's directive already exists)")
+    print(f"escalate: {checked} role(s) checked, {escalated} escalated")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -779,6 +860,15 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="local preflight: tooling + store reachability")
     dr.add_argument("team", nargs="?")
     dr.set_defaults(func=cmd_doctor)
+
+    dg = sub.add_parser("digest", help="operator digest: blocked-on-you / upcoming / agents / stale")
+    dg.add_argument("team"); dg.add_argument("--human"); add_json(dg)
+    dg.add_argument("--store", action="store_true",
+                    help="persist to _coord/digests/<date>-<window>.md (deduped per day+window)")
+    dg.set_defaults(func=cmd_digest)
+    es = sub.add_parser("escalate", help="role-vacancy sweep -> daily marker + P1 directive to maintainer")
+    es.add_argument("team")
+    es.set_defaults(func=cmd_escalate)
 
     rp = sub.add_parser("respond", help="answer + close a directive with an outcome")
     rp.add_argument("team"); rp.add_argument("name"); rp.add_argument("--outcome", "-o", required=True)
