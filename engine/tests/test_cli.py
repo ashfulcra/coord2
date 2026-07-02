@@ -169,3 +169,45 @@ def test_cli_continuity_slugifies_task(capsys):
     assert "team/r/member/ash/continuity/feat-sub-task/latest.json" in t.store
     cli.main(["continuity", "resume", "r", "ash"], transport=t)
     assert "objective: x" in capsys.readouterr().out
+
+
+def test_cli_task_block_pause_abandon_assign(capsys):
+    from coord_engine import okf
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "T", "--status", "active"], transport=t)
+    assert cli.main(["task", "block", "r", "t", "--blocked-on", "review", "--on-user", "ash"], transport=t) == 0
+    fm = okf.parse_frontmatter(t.store["team/r/task/t.md"])
+    assert fm["status"] == "blocked" and fm["blocked_on"] == "review"
+    assert fm["assignee"] == "ash" and "needs:human" in fm["tags"]
+    # blocked -> waiting is a legal transition
+    assert cli.main(["task", "pause", "r", "t", "-n", "resume after review"], transport=t) == 0
+    assert okf.parse_frontmatter(t.store["team/r/task/t.md"])["status"] == "waiting"
+
+
+def test_cli_task_pause_and_abandon(capsys):
+    from coord_engine import okf
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "P", "--status", "active"], transport=t)
+    assert cli.main(["task", "pause", "r", "p", "-n", "wait for CI"], transport=t) == 0
+    fm = okf.parse_frontmatter(t.store["team/r/task/p.md"])
+    assert fm["status"] == "waiting" and fm["next_action"] == "wait for CI"
+    assert cli.main(["task", "abandon", "r", "p", "-r", "superseded"], transport=t) == 0
+    out = t.store["team/r/task/p.md"]
+    assert okf.parse_frontmatter(out)["status"] == "abandoned" and "superseded" in out
+
+
+def test_cli_task_assign(capsys):
+    from coord_engine import okf
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "A"], transport=t)
+    assert cli.main(["task", "assign", "r", "a", "codex:h:r"], transport=t) == 0
+    assert okf.parse_frontmatter(t.store["team/r/task/a.md"])["assignee"] == "codex:h:r"
+
+
+def test_cli_task_abandon_terminal_blocks_further(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Z"], transport=t)
+    cli.main(["task", "abandon", "r", "z", "-r", "nope"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["task", "assign", "r", "z", "x"], transport=t) == 0  # assign w/o status change ok on terminal
+    assert cli.main(["task", "pause", "r", "z", "-n", "x"], transport=t) == 1  # no transition out of terminal

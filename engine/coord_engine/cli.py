@@ -225,6 +225,39 @@ def cmd_task_update(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+def _task_apply(args, transport, **kw) -> int:
+    """Shared read-modify-write for the dedicated lifecycle verbs."""
+    path = _task_path(args.team, args.name)
+    try:
+        out = tasks.apply_update(transport.read(path), now=_iso(_now()), **kw)
+    except tasks.TaskError as e:
+        print(f"task {args.verb} failed: {e}", file=sys.stderr)
+        return 1
+    transport.write(path, out)
+    print(f"{args.verb} {args.name}")
+    return 0
+
+
+def cmd_task_block(args: argparse.Namespace, transport: Any) -> int:
+    kw = {"status": "blocked", "blocked_on": args.blocked_on}
+    if args.on_user:
+        kw["assignee"] = args.on_user
+        kw["add_tags"] = ["needs:human"]
+    return _task_apply(args, transport, **kw)
+
+
+def cmd_task_pause(args: argparse.Namespace, transport: Any) -> int:
+    return _task_apply(args, transport, status="waiting", next_action=args.next)
+
+
+def cmd_task_abandon(args: argparse.Namespace, transport: Any) -> int:
+    return _task_apply(args, transport, status="abandoned", evidence=args.reason)
+
+
+def cmd_task_assign(args: argparse.Namespace, transport: Any) -> int:
+    return _task_apply(args, transport, assignee=args.assignee)
+
+
 def cmd_task_done(args: argparse.Namespace, transport: Any) -> int:
     path = _task_path(args.team, args.name)
     try:
@@ -385,6 +418,20 @@ def build_parser() -> argparse.ArgumentParser:
     tdn = tksub.add_parser("done", help="mark done (requires evidence)")
     tdn.add_argument("team"); tdn.add_argument("name"); tdn.add_argument("--evidence", "-e", required=True)
     tdn.set_defaults(func=cmd_task_done)
+    tbl = tksub.add_parser("block", help="mark blocked (sets blocked_on; --on-user routes to a human)")
+    tbl.add_argument("team"); tbl.add_argument("name")
+    tbl.add_argument("--blocked-on", dest="blocked_on", required=True)
+    tbl.add_argument("--on-user", dest="on_user", help="assign to this human + tag needs:human")
+    tbl.set_defaults(func=cmd_task_block, verb="block")
+    tpa = tksub.add_parser("pause", help="pause to waiting (requires --next)")
+    tpa.add_argument("team"); tpa.add_argument("name"); tpa.add_argument("--next", "-n", required=True)
+    tpa.set_defaults(func=cmd_task_pause, verb="pause")
+    tab = tksub.add_parser("abandon", help="abandon (requires --reason)")
+    tab.add_argument("team"); tab.add_argument("name"); tab.add_argument("--reason", "-r", required=True)
+    tab.set_defaults(func=cmd_task_abandon, verb="abandon")
+    tas = tksub.add_parser("assign", help="set/redirect assignee")
+    tas.add_argument("team"); tas.add_argument("name"); tas.add_argument("assignee")
+    tas.set_defaults(func=cmd_task_assign, verb="assign")
 
     rv = sub.add_parser("review", help="review verdict tally (fulcra-agent-review)")
     rvsub = rv.add_subparsers(dest="review_command", required=True)
