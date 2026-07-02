@@ -27,8 +27,16 @@ class TaskError(ValueError):
     pass
 
 
+MAX_SLUG_LEN = 80
+
+
 def slugify(title: str) -> str:
-    return _SLUG_RE.sub("-", (title or "").lower()).strip("-") or "task"
+    """Filename-safe slug, capped at ``MAX_SLUG_LEN`` — an unbounded slug from a
+    long title produced a ~600-char filename in the migration dry-run."""
+    s = _SLUG_RE.sub("-", (title or "").lower()).strip("-") or "task"
+    if len(s) > MAX_SLUG_LEN:
+        s = s[:MAX_SLUG_LEN].rstrip("-")
+    return s
 
 
 def agent_key(agent: str) -> str:
