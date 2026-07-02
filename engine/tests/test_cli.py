@@ -108,3 +108,18 @@ def test_cli_task_update_done_needs_evidence(capsys):
     assert cli.main(["task", "update", "r", "t", "--status", "done"], transport=t) == 1
     assert "done requires evidence" in capsys.readouterr().err
     assert cli.main(["task", "update", "r", "t", "--status", "done", "-e", "ok"], transport=t) == 0
+
+
+def test_cli_review_status(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/review/pr-9.md", "---\ntype: Review\nrequired: alice, bob\n---\n")
+    t.put("team/r/review/pr-9/verdicts/alice.md",
+          "---\ntype: Verdict\nreviewer: alice\nverdict: approve\n---\n")
+    assert cli.main(["review", "status", "r", "pr-9", "--json"], transport=t) == 0
+    res = _j.loads(capsys.readouterr().out)
+    assert res["state"] == "PENDING" and res["pending_required"] == ["bob"]
+    t.put("team/r/review/pr-9/verdicts/bob.md",
+          "---\ntype: Verdict\nreviewer: bob\nverdict: changes\n---\n")
+    cli.main(["review", "status", "r", "pr-9", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out)["state"] == "CHANGES"
