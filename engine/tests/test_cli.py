@@ -758,3 +758,26 @@ def test_cli_briefing_full_and_empty_store(capsys):
     assert any(p["agent"] == "amy" for p in b["presence"])
     # empty store: every section degrades gracefully
     assert cli.main(["briefing", "empty-team", "-a", "ghost"], transport=FakeTransport()) == 0
+
+
+def test_park_respects_per_role_sla(capsys):
+    t = FakeTransport()
+    t.put("team/r/roles/tight.md", "---\ntype: Role\nsla_hours: 0.001\n---\n")  # ~4s SLA
+    t.put("team/r/roles/tight/leases/amy-" + __import__("hashlib").sha1(b"amy").hexdigest()[:6] + ".md",
+          "---\ntype: Lease\nagent: amy\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
+    cli.main(["continuity", "park", "r", "-a", "amy"], transport=t)
+    assert "nothing to park" in capsys.readouterr().out    # stale vs the role's OWN sla
+
+
+def test_park_failed_snapshot_write_leaves_ref_unchanged(capsys):
+    from coord_engine import okf
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md", "---\ntype: Role\nsla_hours: 24\n---\n")
+    cli.main(["roles", "claim", "r", "reviewer", "-a", "amy"], transport=t)
+    orig_write = t.write
+    t.write = lambda p, c: False if "/continuity/" in p else orig_write(p, c)
+    capsys.readouterr()
+    cli.main(["continuity", "park", "r", "-a", "amy"], transport=t)
+    assert "FAILED" in capsys.readouterr().err
+    fm = okf.parse_frontmatter(t.store["team/r/roles/reviewer.md"])
+    assert "checkpoint_ref" not in fm                      # never points at a ghost snapshot

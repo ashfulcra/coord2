@@ -604,9 +604,14 @@ def _held_roles(transport: Any, team: str, agent: str) -> list[str]:
         if e.get("is_dir") or not n.endswith(".md") or n == "index.md":
             continue
         role = n[:-3]
+        reg = okf.parse_frontmatter(transport.read(_role_doc_path(team, role))) or {}
+        try:
+            sla = float(reg.get("sla_hours") or roles.DEFAULT_SLA_HOURS)
+        except (TypeError, ValueError):
+            sla = roles.DEFAULT_SLA_HOURS
         lease = okf.parse_frontmatter(
             transport.read(f"{_leases_prefix(team, role)}{tasks.agent_key(agent)}.md")) or {}
-        if lease and roles.age_hours(lease.get("timestamp"), now) <= roles.DEFAULT_SLA_HOURS:
+        if lease and roles.age_hours(lease.get("timestamp"), now) <= sla:
             held.append(role)
     return held
 
@@ -629,8 +634,13 @@ def cmd_continuity_park(args: argparse.Namespace, transport: Any) -> int:
             open_questions=args.open_question or [],
         )
         path = _continuity_path(args.team, agent, task_slug)
-        transport.write(path, json.dumps(snap, indent=2))
-        _set_role_field(transport, args.team, role, "checkpoint_ref", path)
+        if not transport.write(path, json.dumps(snap, indent=2)):
+            print(f"park: snapshot write FAILED for {role}; checkpoint_ref left unchanged",
+                  file=sys.stderr)
+            continue
+        if not _set_role_field(transport, args.team, role, "checkpoint_ref", path):
+            print(f"park: checkpoint_ref update FAILED for {role}", file=sys.stderr)
+            continue
         print(f"parked {role} -> {path}")
     return 0
 
@@ -644,20 +654,24 @@ def cmd_briefing(args: argparse.Namespace, transport: Any) -> int:
     rows = _load_rows(transport, args.team)
     try:
         out["presence"] = presence.roster(_presence_shards(transport, args.team), now=now)
-    except Exception:
+    except Exception as e:
+        print(f"briefing: presence section unavailable ({type(e).__name__})", file=sys.stderr)
         out["presence"] = []
     try:
         out["board"] = query.board(rows)
-    except Exception:
+    except Exception as e:
+        print(f"briefing: board section unavailable ({type(e).__name__})", file=sys.stderr)
         out["board"] = {}
     try:
         acks = {str(r.get("name")): (r.get("acked_by") or []) for r in rows}
         out["inbox"] = directives.inbox(rows, acks, agent, now=now)
-    except Exception:
+    except Exception as e:
+        print(f"briefing: inbox section unavailable ({type(e).__name__})", file=sys.stderr)
         out["inbox"] = []
     try:
         out["needs_me"] = query.needs_me(rows, agent, now=now)
-    except Exception:
+    except Exception as e:
+        print(f"briefing: needs_me section unavailable ({type(e).__name__})", file=sys.stderr)
         out["needs_me"] = []
     try:
         snaps = []
@@ -671,7 +685,8 @@ def cmd_briefing(args: argparse.Namespace, transport: Any) -> int:
                     except Exception:
                         pass
         out["resume"] = continuity.latest(snaps)
-    except Exception:
+    except Exception as e:
+        print(f"briefing: resume section unavailable ({type(e).__name__})", file=sys.stderr)
         out["resume"] = None
     if args.json:
         print(json.dumps(out, indent=2))
