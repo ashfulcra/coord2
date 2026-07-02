@@ -25,6 +25,16 @@ def test_latest_picks_newest():
     assert continuity.latest([{"no": "date"}]) is None
 
 
+def test_latest_ignores_garbage_created_at_and_tiebreaks_deterministically():
+    good = continuity.build_snapshot(agent="x", task="a", objective="good",
+                                     now="2026-07-01T10:00:00Z")
+    newer = continuity.build_snapshot(agent="x", task="b", objective="newer",
+                                      now="2026-07-01T10:00:00Z")
+    garbage = {"task": "z", "objective": "bad", "created_at": "not-a-date"}
+    assert continuity.latest([good, garbage])["objective"] == "good"
+    assert continuity.latest([newer, good])["task"] == "b"
+
+
 def test_render_resume_none():
     assert "No continuity snapshot" in continuity.render_resume(None)
 
