@@ -53,6 +53,7 @@ def build(
     blocked_on_you = sort_rows([
         r for r in open_rows
         if "needs:human" in (r.get("tags") or []) or r.get("assignee") == human
+        or human in str(r.get("blocked_on") or "")
     ])
     upcoming = sort_rows([
         r for r in open_rows

@@ -676,12 +676,27 @@ def test_cli_escalate_vacant_role_once_per_day(capsys):
     assert "escalated reviewer -> ash" in out
     # marker + P1 directive to maintainer exist
     assert any("escalations/" in p for p in t.store)
-    slug = [p for p in t.store if p.startswith("team/r/task/role-vacant")][0]
+    slug = [p for p in t.store if p.startswith("team/r/task/role-vacant-")][0]
     fm = okf.parse_frontmatter(t.store[slug])
     assert fm["assignee"] == "ash" and fm["priority"] == "P1"
     # second sweep same day: marker dedupes
     assert cli.main(["escalate", "r"], transport=t) == 0
     assert "0 escalated" in capsys.readouterr().out
+
+
+def test_cli_escalate_renotifies_next_day_with_new_directive(capsys):
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md",
+          "---\ntype: Role\nsla_hours: 24\nmaintainer: ash\n---\n")
+    # day-1 marker from "yesterday" + yesterday's directive already exist
+    t.put("team/r/roles/reviewer/escalations/2026-07-01.md", "---\ntype: Escalation\n---\n")
+    t.put("team/r/task/role-vacant-2026-07-01-reviewer-unattended-past-24h-sla.md",
+          "---\ntype: Task\ntitle: old\nstatus: proposed\n---\n")
+    assert cli.main(["escalate", "r"], transport=t) == 0
+    out = capsys.readouterr().out
+    assert "escalated reviewer -> ash" in out          # a NEW day-scoped directive
+    todays = [p for p in t.store if p.startswith("team/r/task/role-vacant-") and "2026-07-01" not in p]
+    assert len(todays) == 1
 
 
 def test_cli_escalate_held_role_no_escalation(capsys):

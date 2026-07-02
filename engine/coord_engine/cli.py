@@ -695,10 +695,6 @@ def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
 
 # --- digest + escalate (fulcra-agent-health, A5b) ---
 
-def _human() -> str:
-    return os.environ.get("FULCRA_COORD_HUMAN") or "human"
-
-
 def cmd_digest(args: argparse.Namespace, transport: Any) -> int:
     now = _iso(_now())
     rows = _load_rows(transport, args.team)
@@ -761,7 +757,7 @@ def cmd_escalate(args: argparse.Namespace, transport: Any) -> int:
         transport.write(marker_path, okf.render_frontmatter(
             {"type": "Escalation", "role": role, "timestamp": now}) + "\nescalated\n")
         slug, content = tasks.new_task_doc(
-            f"ROLE VACANT: {role} unattended past {sla:g}h SLA",
+            f"ROLE VACANT {today}: {role} unattended past {sla:g}h SLA",
             now=now, status="proposed", priority="P1", owner=_host(),
             assignee=maintainer, kind="directive",
             summary=f"Role {role} in team/{args.team} has no fresh lease past its SLA. "
@@ -770,8 +766,10 @@ def cmd_escalate(args: argparse.Namespace, transport: Any) -> int:
         dst = _task_path(args.team, slug)
         if transport.read(dst) is None:
             transport.write(dst, content)
-        escalated += 1
-        print(f"escalated {role} -> {maintainer}")
+            escalated += 1
+            print(f"escalated {role} -> {maintainer}")
+        else:
+            print(f"re-escalation suppressed for {role} (today's directive already exists)")
     print(f"escalate: {checked} role(s) checked, {escalated} escalated")
     return 0
 
