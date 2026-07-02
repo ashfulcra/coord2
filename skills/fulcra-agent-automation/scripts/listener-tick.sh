@@ -13,14 +13,16 @@ shift 2 || true
 
 STATE_DIR="${COORD_LISTENER_STATE:-$HOME/.cache/coord-engine}"
 mkdir -p "$STATE_DIR"
-SAFE_KEY="$(printf '%s-%s' "$TEAM" "$AGENT" | tr -c 'A-Za-z0-9_.-' '-')"
+SAFE_KEY="$(printf '%s-%s' "$TEAM" "$AGENT" | tr -c 'A-Za-z0-9_.-' '-')-$(printf '%s-%s' "$TEAM" "$AGENT" | cksum | cut -d' ' -f1)"
 COUNT_FILE="$STATE_DIR/listener-$SAFE_KEY.count"
 
 ITEMS="$(coord-engine inbox "$TEAM" --agent "$AGENT" --json 2>/dev/null || echo '[]')"
-COUNT="$(printf '%s' "$ITEMS" | python3 -c 'import json,sys
-try: print(len(json.load(sys.stdin)))
-except Exception: print(0)')"
+# count rows without needing python on the pinned PATH (each row has one "name" key)
+COUNT="$(printf '%s' "$ITEMS" | grep -o '"name"' | wc -l | tr -d '[:space:]' || true)"
+[[ "$COUNT" =~ ^[0-9]+$ ]] || COUNT=0
 PREV="$(cat "$COUNT_FILE" 2>/dev/null || echo 0)"
+# 2) a corrupt/partial count-file must not kill the tick
+[[ "$PREV" =~ ^[0-9]+$ ]] || PREV=0
 printf '%s' "$COUNT" > "$COUNT_FILE"
 
 if [[ "$COUNT" -gt "$PREV" ]]; then
