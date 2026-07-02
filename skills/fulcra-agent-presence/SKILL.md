@@ -1,0 +1,38 @@
+---
+name: fulcra-agent-presence
+description: "Add presence + liveness to a fulcra-agent-teams space: agents heartbeat a presence shard, and deterministic folds answer who's live/idle/stale, what each agent is working on, and who a broadcast must reach."
+homepage: "https://github.com/ashfulcra/coord2"
+license: "MIT"
+user-invocable: true
+metadata: { "openclaw": { "emoji": "📡" } }
+---
+
+# Fulcra Agent Presence
+
+Enhances [`fulcra-agent-teams`](https://github.com/fulcradynamics/agent-skills). Teams knows who its
+*members* are (prose in `index.md`) but not who is **alive right now**. This skill adds a presence
+heartbeat + deterministic liveness folds — the roster that directives' broadcast semantics, the operator
+digest, and role-vacancy escalation all build on. Optional: without it, everything else still works;
+broadcasts just degrade to "acked-by-me hides it for me".
+
+## How it works
+- **Beat** (single-file write, safe as a command): `presence beat` writes/refreshes your shard
+  `team/<team>/presence/<agent>.md` (OKF `type: Presence`: agent, workstreams, summary, timestamp).
+  Beat whenever you start work, on heartbeat/cron ticks, and when your focus changes.
+- **Folds** (deterministic, engine-side — never eyeball timestamps):
+  - `presence show` — roster with `live` (<1h) / `idle` (<24h) / `stale` per agent.
+  - `agents` — cross-agent digest: each agent's liveness, summary, and open work by status
+    (union of presence ∪ task owners/assignees from the reconcile aggregate).
+  - Roles: `roles claim <team> <role>` writes/refreshes your lease shard; `roles release` deletes it;
+    `roles status` folds HELD/VACANT/CONTESTED (see fulcra-agent-roles).
+
+## Usage
+```bash
+uv tool run coord-engine presence beat <team> [--agent X] [-w workstream]... [-s "one-liner"]
+uv tool run coord-engine presence show <team> [--json]
+uv tool run coord-engine agents <team> [--json]
+uv tool run coord-engine roles claim <team> <role> [--agent X]     # refresh = re-run
+uv tool run coord-engine roles release <team> <role> [--agent X]
+```
+`--agent` defaults to `$FULCRA_COORD_AGENT` (or a derived host id). Stale shards are eventually pruned by
+the reconcile shard-GC; a stale agent reappears by simply beating again.

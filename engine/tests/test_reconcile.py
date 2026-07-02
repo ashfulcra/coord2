@@ -45,6 +45,9 @@ class FakeTransport:
         self.store[path] = content
         return True
 
+    def delete(self, path):
+        return self.store.pop(path, None) is not None
+
 
 def _task(title, status, priority="P2"):
     return f"---\ntype: Task\ntitle: {title}\nstatus: {status}\npriority: {priority}\n---\nbody"

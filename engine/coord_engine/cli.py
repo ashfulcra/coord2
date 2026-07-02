@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import aggregate, continuity, okf, query, review, roles, tasks
+from . import aggregate, continuity, okf, presence, query, review, roles, tasks
 from . import reconcile as rec
 from .transport import FulcraFileTransport, TransportError
 
@@ -383,6 +383,91 @@ def cmd_continuity_resume(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- presence (fulcra-agent-presence) ---
+
+def _presence_prefix(team: str) -> str:
+    return f"team/{team}/presence/"
+
+
+def _presence_shards(transport: Any, team: str) -> list[dict[str, Any]]:
+    shards: list[dict[str, Any]] = []
+    try:
+        for e in transport.list_dir(_presence_prefix(team)):
+            n = e.get("name") or ""
+            if e.get("is_dir") or not n.endswith(".md"):
+                continue
+            fm = okf.parse_frontmatter(transport.read(_presence_prefix(team) + n)) or {}
+            fm.setdefault("agent", n[:-3])
+            shards.append(fm)
+    except TransportError:
+        pass
+    return shards
+
+
+def cmd_presence_beat(args: argparse.Namespace, transport: Any) -> int:
+    agent = args.agent or _host()
+    fm = {
+        "type": "Presence", "title": f"presence — {agent}", "agent": agent,
+        "workstreams": args.workstream or [], "summary": args.summary or "",
+        "timestamp": _iso(_now()),
+    }
+    body = f"\n# Presence: {agent}\n"
+    slug = tasks.slugify(agent)
+    transport.write(f"{_presence_prefix(args.team)}{slug}.md", okf.render_frontmatter(fm) + body)
+    print(f"beat {agent} ({slug}.md)")
+    return 0
+
+
+def cmd_presence_show(args: argparse.Namespace, transport: Any) -> int:
+    ros = presence.roster(_presence_shards(transport, args.team), now=_iso(_now()))
+    if args.json:
+        print(json.dumps(ros, indent=2))
+        return 0
+    print(f"presence — team/{args.team}: {len(ros)} agent(s)")
+    for r in ros:
+        ws = ", ".join(r["workstreams"])
+        print(f"  [{r['liveness']:5}] {r['agent']}" + (f"  ({ws})" if ws else "")
+              + (f" — {r['summary']}" if r["summary"] else ""))
+    return 0
+
+
+def cmd_agents(args: argparse.Namespace, transport: Any) -> int:
+    rows = _load_rows(transport, args.team)
+    digest = presence.agents_digest(rows, _presence_shards(transport, args.team), now=_iso(_now()))
+    if args.json:
+        print(json.dumps(digest, indent=2))
+        return 0
+    for a in digest:
+        counts = ", ".join(f"{k}={v}" for k, v in sorted(a["open"].items())) or "no open work"
+        print(f"  [{a['liveness']:7}] {a['agent']} — {counts}"
+              + (f" — {a['summary']}" if a["summary"] else ""))
+    return 0
+
+
+def cmd_roles_claim(args: argparse.Namespace, transport: Any) -> int:
+    agent = args.agent or _host()
+    slug = tasks.slugify(agent)
+    fm = {"type": "Lease", "title": f"{args.role} lease — {agent}", "agent": agent,
+          "timestamp": _iso(_now())}
+    transport.write(f"{_leases_prefix(args.team, args.role)}{slug}.md",
+                    okf.render_frontmatter(fm) + f"\nHolding {args.role}.\n")
+    print(f"claimed {args.role} as {agent} (refresh by re-running)")
+    return 0
+
+
+def cmd_roles_release(args: argparse.Namespace, transport: Any) -> int:
+    agent = args.agent or _host()
+    slug = tasks.slugify(agent)
+    path = f"{_leases_prefix(args.team, args.role)}{slug}.md"
+    if transport.read(path) is None:
+        print(f"no lease for {agent} on {args.role}", file=sys.stderr)
+        return 1
+    ok = transport.delete(path) if hasattr(transport, "delete") else False
+    print(f"released {args.role} ({agent})" if ok else f"release failed for {path}",
+          file=sys.stdout if ok else sys.stderr)
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -413,6 +498,27 @@ def build_parser() -> argparse.ArgumentParser:
     rst = rlsub.add_parser("status", help="HELD/VACANT/CONTESTED + escalation-due")
     rst.add_argument("team"); rst.add_argument("role"); add_json(rst)
     rst.set_defaults(func=cmd_roles_status)
+    rcl = rlsub.add_parser("claim", help="claim/refresh a lease on a role")
+    rcl.add_argument("team"); rcl.add_argument("role"); rcl.add_argument("--agent", "-a")
+    rcl.set_defaults(func=cmd_roles_claim)
+    rre = rlsub.add_parser("release", help="release your lease on a role")
+    rre.add_argument("team"); rre.add_argument("role"); rre.add_argument("--agent", "-a")
+    rre.set_defaults(func=cmd_roles_release)
+
+    pr = sub.add_parser("presence", help="presence beats + roster (fulcra-agent-presence)")
+    prsub = pr.add_subparsers(dest="presence_command", required=True)
+    prb = prsub.add_parser("beat", help="write/refresh your presence shard")
+    prb.add_argument("team"); prb.add_argument("--agent", "-a")
+    prb.add_argument("--workstream", "-w", action="append")
+    prb.add_argument("--summary", "-s")
+    prb.set_defaults(func=cmd_presence_beat)
+    prs = prsub.add_parser("show", help="roster with live/idle/stale liveness")
+    prs.add_argument("team"); add_json(prs)
+    prs.set_defaults(func=cmd_presence_show)
+
+    ag = sub.add_parser("agents", help="cross-agent digest (open work by agent + liveness)")
+    ag.add_argument("team"); add_json(ag)
+    ag.set_defaults(func=cmd_agents)
 
     tk = sub.add_parser("task", help="typed task lifecycle (fulcra-agent-tasks)")
     tksub = tk.add_subparsers(dest="task_command", required=True)
