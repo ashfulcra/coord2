@@ -68,8 +68,8 @@ def _fold_and_gc_acks(transport: Any, team: str, live_slugs: set) -> tuple[dict,
                 claimed = str(fm.get("agent") or "")
                 # trust frontmatter identity only when it matches the ACL-controlled
                 # filename stem (review-layer precedent); else the filename wins.
-                from .tasks import slugify
-                agents.append(claimed if claimed and slugify(claimed) == stem else stem)
+                from .tasks import agent_key
+                agents.append(claimed if claimed and agent_key(claimed) == stem else stem)
             acks[n] = sorted(set(agents))
         elif hasattr(transport, "delete"):
             for f in shard_files:

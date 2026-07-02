@@ -386,7 +386,7 @@ def cmd_continuity_resume(args: argparse.Namespace, transport: Any) -> int:
 # --- directives (fulcra-agent-directives) ---
 
 def _ack_path(team: str, slug: str, agent: str) -> str:
-    return f"team/{team}/_coord/acks/{slug}/{tasks.slugify(agent)}.md"
+    return f"team/{team}/_coord/acks/{slug}/{tasks.agent_key(agent)}.md"
 
 
 def _response_path(team: str, slug: str, stamp: str) -> str:
