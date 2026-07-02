@@ -504,6 +504,19 @@ def test_retention_archives_old_terminal_and_moves_shards(capsys):
     # index/aggregate exclude it
     agg = _j.loads(t.store["team/r/_coord/summaries.json"])
     assert {r["name"] for r in agg["rows"]} == {"fresh"}
+    # log says Archived (with a live archive link), never "removed" w/ a dead link
+    log = t.store.get("team/r/task/log.md", "")
+    assert "**Archived**" in log and "archive/2020-01/olddone.md" in log
+    assert "olddone.md) removed" not in log
+
+
+def test_retention_keeps_malformed_timestamp_hot(capsys):
+    t = FakeTransport()
+    t.put("team/r/task/weird.md",
+          "---\ntype: Task\ntitle: W\nstatus: done\ntimestamp: not-a-date\n---\n")
+    cli.main(["reconcile", "r", "--retention-days", "30"], transport=t)
+    assert "team/r/task/weird.md" in t.store            # kept hot, no garbage bucket
+    assert not any("task/archive/not-a-d" in p for p in t.store)
 
 
 def test_retention_off_by_default_and_daily_throttle(capsys):
