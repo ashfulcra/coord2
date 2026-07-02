@@ -54,3 +54,26 @@ to a `v0.4.0` tag, with a README quickstart. Publishing (B) is the *upstream pha
 - README "Install (standalone)" quickstart.
 - Tag `v0.4.0`.
 - Live-verify: fresh install → `coord-engine reconcile` + a skill is discoverable.
+
+---
+
+## Resolution (opus ENDORSE-WITH-CHANGES + live verification, 2026-07-02)
+
+- **A confirmed** (defer publishing). Git-install verified working.
+- **Skills install = COPY by default** (matches upstream agent-skills' documented "clone and copy into
+  `.claude/skills/`"); `--symlink` is a dev/dogfood flag only. **No plugin wrapper** (upstream has none).
+  Skill discovery via `~/.claude/skills/<name>/SKILL.md` is **verified** (this machine loads symlinked
+  skills there). A real `skills` CLI exists (`npx skills add fulcradynamics/agent-skills`) — coord2's
+  repo is shape-identical, so `npx skills add ashfulcra/coord2` should work too; the setup script is the
+  no-CLI fallback and the version-coupled path.
+- **Version coupling solved structurally:** setup installs the engine from the SAME checkout as the skills
+  it copies, so they can't drift. (No separate tag-pin needed for the checkout path; the git-install
+  fallback pins `@v0.4.0`.)
+- **Omissions fixed:** no-`uv` detection with an actionable message; symmetric `--uninstall`; self-test
+  checks `coord-engine` + `fulcra-api` on PATH + skills present (not just `--help`); deleted a leaked
+  `skills/**/uv.lock` + added a `.gitignore` guard (skills carry no build artifacts).
+- **Forward-compat:** skill names + `skills/<name>/` layout are upstream-shaped (`git mv` upstream). The
+  `_coord/` sidecar is an operational subdir teams ignores, and the `ENGINE-OWNED` banner is a markdown
+  comment — both tolerated by a bare-teams agent (interop preserved); uninstall documents reverting a team
+  to bare teams. Open item (do NOT resolve now): whether `coord-engine` upstreams as its own tool or folds
+  into `fulcra-api`.
