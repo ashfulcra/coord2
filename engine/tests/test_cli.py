@@ -809,3 +809,13 @@ def test_park_failed_snapshot_write_leaves_ref_unchanged(capsys):
     assert "FAILED" in capsys.readouterr().err
     fm = okf.parse_frontmatter(t.store["team/r/roles/reviewer.md"])
     assert "checkpoint_ref" not in fm                      # never points at a ghost snapshot
+
+def test_health_json_uses_monitor_exit_code(capsys):
+    import json as _j
+    stale = FakeTransport()
+    stale.put("team/r/_coord/health/slow.json",
+              _j.dumps({"host": "slow", "at": "2020-01-01T00:00:00Z"}))
+
+    assert cli.main(["health", "r", "--json"], transport=stale) == 1
+    view = _j.loads(capsys.readouterr().out)
+    assert view["healthy"] is False and view["total"] == 1
