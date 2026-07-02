@@ -812,9 +812,10 @@ def cmd_health(args: argparse.Namespace, transport: Any) -> int:
     except TransportError:
         pass
     view = health_mod.fold(shards, now=_iso(_now()))
+    code = 0 if view["healthy"] else 1
     if args.json:
         print(json.dumps(view, indent=2))
-        return 0
+        return code
     print(f"health — team/{args.team}: {view['fresh']}/{view['total']} host(s) fresh"
           + ("" if view["healthy"] else "  [NO FRESH RECONCILER]"))
     if view["total"] == 0:
@@ -826,7 +827,7 @@ def cmd_health(args: argparse.Namespace, transport: Any) -> int:
               f" (v{h.get('engine_version')}, {h.get('tasks')} tasks, {h.get('warnings')} warn)")
     # empty fleet reads UNHEALTHY: "nobody ever reconciled" is the primary
     # cold-start failure a monitor probe exists to catch (review finding).
-    return 0 if view["healthy"] else 1
+    return code
 
 
 def cmd_doctor(args: argparse.Namespace, transport: Any) -> int:
