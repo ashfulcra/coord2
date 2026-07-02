@@ -32,7 +32,20 @@ It runs `coord-engine reconcile <team>`; needs `coord-engine` + an authenticated
 `fulcra-agent-teams`' automation section) that runs `uv tool run coord-engine reconcile <team>` on your
 chosen cadence. Prefer a longer interval or an external loop over waking the model every tick.
 
-## 2. Resume on wake — structured, not a prose re-read
+## 2. Listener — inbox notifications + consent-gated wake (A8)
+Schedule an inbox check so directed work reaches you without polling:
+```bash
+./scripts/install-listener.sh <team> <agent> [interval-minutes]           # notify only (default 10m)
+./scripts/install-listener.sh <team> <agent> 10 --wake-cmd "…headless…"   # + consent-gated wake
+./scripts/install-listener.sh --uninstall <team> <agent>
+```
+Each tick runs `coord-engine inbox --agent <agent>`; on NEW items it posts a macOS notification (or a
+log line) and, only if you consented to `--wake-cmd` at install, runs your wake command. Note: `--yes` skips BOTH the schedule prompt and the wake-command acknowledgement — only use it when
+that consent was already given. Hardened like
+the heartbeat: validated inputs, pinned `PATH`/`HOME` (scheduled jobs source no profile — the parent
+project's wake silently 401'd on exactly this), `plutil` lint, install-time self-test.
+
+## 3. Resume on wake — structured, not a prose re-read
 When a cron/heartbeat wakes an agent to do team work, the wake payload should **resume continuity first**
 (this is the structured version of `fulcra-agent-teams`' "read progress.md before acting" rule):
 ```bash
@@ -41,7 +54,7 @@ uv tool run coord-engine continuity resume <team> <agent>
 Then process the team inbox and, before concluding, snapshot again
 (`coord-engine continuity snapshot …`) and let the next reconcile heal the views.
 
-## 3. Recommended loop for a team
+## 4. Recommended loop for a team
 1. **Heartbeat**: `install-heartbeat.sh <team>` — reconcile every ~20m (consent first).
 2. **On wake**: `continuity resume` → do work (`task …`, inbox) → `continuity snapshot` → `reconcile`.
 3. **Gate merges** with `fulcra-agent-review` (`review status`), and keep roles fresh with
