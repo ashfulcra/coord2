@@ -14,19 +14,23 @@ shift 2 || true
 STATE_DIR="${COORD_LISTENER_STATE:-$HOME/.cache/coord-engine}"
 mkdir -p "$STATE_DIR"
 SAFE_KEY="$(printf '%s-%s' "$TEAM" "$AGENT" | tr -c 'A-Za-z0-9_.-' '-')-$(printf '%s-%s' "$TEAM" "$AGENT" | cksum | cut -d' ' -f1)"
-COUNT_FILE="$STATE_DIR/listener-$SAFE_KEY.count"
+ITEMS_FILE="$STATE_DIR/listener-$SAFE_KEY.items"
 
 ITEMS="$(coord-engine inbox "$TEAM" --agent "$AGENT" --json 2>/dev/null || echo '[]')"
-# count rows without needing python on the pinned PATH (each row has one "name" key)
-COUNT="$(printf '%s' "$ITEMS" | grep -o '"name"' | wc -l | tr -d '[:space:]' || true)"
-[[ "$COUNT" =~ ^[0-9]+$ ]] || COUNT=0
-PREV="$(cat "$COUNT_FILE" 2>/dev/null || echo 0)"
-# 2) a corrupt/partial count-file must not kill the tick
-[[ "$PREV" =~ ^[0-9]+$ ]] || PREV=0
-printf '%s' "$COUNT" > "$COUNT_FILE"
+# Track directive IDs, not just counts: an ack and a new directive can keep the
+# same open count, but the new ID still deserves a notification.
+CURRENT_KEYS="$(printf '%s' "$ITEMS" \
+  | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+  | sed 's/.*"name"[[:space:]]*:[[:space:]]*"//; s/"$//' \
+  | sort -u || true)"
+PREV_KEYS="$(cat "$ITEMS_FILE" 2>/dev/null || true)"
+COUNT="$(printf '%s\n' "$CURRENT_KEYS" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+NEW="$(comm -13 \
+  <(printf '%s\n' "$PREV_KEYS" | sed '/^$/d' | sort -u) \
+  <(printf '%s\n' "$CURRENT_KEYS" | sed '/^$/d' | sort -u) | wc -l | tr -d '[:space:]')"
+printf '%s\n' "$CURRENT_KEYS" > "$ITEMS_FILE"
 
-if [[ "$COUNT" -gt "$PREV" ]]; then
-  NEW=$(( COUNT - PREV ))
+if [[ "$NEW" -gt 0 ]]; then
   MSG="coord2: ${NEW} new directive(s) for ${AGENT} in team/${TEAM} (${COUNT} open)"
   echo "$(date -u +%FT%TZ) $MSG"
   if command -v osascript >/dev/null 2>&1; then
