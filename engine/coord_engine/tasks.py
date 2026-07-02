@@ -74,6 +74,7 @@ def apply_update(
     priority: Optional[str] = None,
     evidence: Optional[str] = None,
     add_tags: Optional[list[str]] = None,
+    remove_tags: Optional[list[str]] = None,
 ) -> str:
     """Read-modify-write a task doc, enforcing the status machine. Raises
     ``TaskError`` on a missing doc, unparseable frontmatter, or illegal transition."""
@@ -110,6 +111,12 @@ def apply_update(
         if not isinstance(cur, list):
             cur = [str(cur)]
         fm["tags"] = cur + [t for t in add_tags if t not in cur]
+    if remove_tags:
+        cur = fm.get("tags") or []
+        if not isinstance(cur, list):
+            cur = [str(cur)]
+        remove = set(remove_tags)
+        fm["tags"] = [t for t in cur if t not in remove]
     fm["timestamp"] = now
     note = f"{now}: {old_status} → {fm['status']}" if status else f"{now}: updated"
     if evidence:

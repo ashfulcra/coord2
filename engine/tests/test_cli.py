@@ -175,13 +175,32 @@ def test_cli_task_block_pause_abandon_assign(capsys):
     from coord_engine import okf
     t = FakeTransport()
     cli.main(["task", "start", "r", "T", "--status", "active"], transport=t)
-    assert cli.main(["task", "block", "r", "t", "--blocked-on", "review", "--on-user", "ash"], transport=t) == 0
+    assert cli.main(["task", "block", "r", "t", "--on-user", "review"], transport=t) == 0
     fm = okf.parse_frontmatter(t.store["team/r/task/t.md"])
     assert fm["status"] == "blocked" and fm["blocked_on"] == "review"
-    assert fm["assignee"] == "ash" and "needs:human" in fm["tags"]
+    assert fm["assignee"] == "human" and "needs:human" in fm["tags"]
     # blocked -> waiting is a legal transition
     assert cli.main(["task", "pause", "r", "t", "-n", "resume after review"], transport=t) == 0
     assert okf.parse_frontmatter(t.store["team/r/task/t.md"])["status"] == "waiting"
+
+
+def test_cli_task_block_on_user_honors_env_human(monkeypatch):
+    from coord_engine import okf
+    monkeypatch.setenv("FULCRA_COORD_HUMAN", "ash")
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Human", "--status", "active"], transport=t)
+    assert cli.main(["task", "block", "r", "human", "--on-user", "approve"], transport=t) == 0
+    fm = okf.parse_frontmatter(t.store["team/r/task/human.md"])
+    assert fm["blocked_on"] == "approve"
+    assert fm["assignee"] == "ash"
+    assert "needs:human" in fm["tags"]
+
+
+def test_cli_task_block_requires_a_reason(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "B", "--status", "active"], transport=t)
+    assert cli.main(["task", "block", "r", "b"], transport=t) == 1
+    assert "requires --blocked-on or --on-user" in capsys.readouterr().err
 
 
 def test_cli_task_pause_and_abandon(capsys):
@@ -202,6 +221,30 @@ def test_cli_task_assign(capsys):
     cli.main(["task", "start", "r", "A"], transport=t)
     assert cli.main(["task", "assign", "r", "a", "codex:h:r"], transport=t) == 0
     assert okf.parse_frontmatter(t.store["team/r/task/a.md"])["assignee"] == "codex:h:r"
+
+
+def test_cli_task_assign_clears_needs_human_when_reassigned_away(monkeypatch):
+    from coord_engine import okf
+    monkeypatch.setenv("FULCRA_COORD_HUMAN", "ash")
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "H", "--status", "active"], transport=t)
+    cli.main(["task", "block", "r", "h", "--on-user", "decide"], transport=t)
+    assert cli.main(["task", "assign", "r", "h", "agent-b"], transport=t) == 0
+    fm = okf.parse_frontmatter(t.store["team/r/task/h.md"])
+    assert fm["assignee"] == "agent-b"
+    assert "needs:human" not in fm["tags"]
+
+
+def test_cli_task_assign_keeps_needs_human_when_reassigned_to_human(monkeypatch):
+    from coord_engine import okf
+    monkeypatch.setenv("FULCRA_COORD_HUMAN", "ash")
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Keep", "--status", "active"], transport=t)
+    cli.main(["task", "block", "r", "keep", "--on-user", "decide"], transport=t)
+    assert cli.main(["task", "assign", "r", "keep", "ash"], transport=t) == 0
+    fm = okf.parse_frontmatter(t.store["team/r/task/keep.md"])
+    assert fm["assignee"] == "ash"
+    assert "needs:human" in fm["tags"]
 
 
 def test_cli_task_abandon_terminal_blocks_further(capsys):

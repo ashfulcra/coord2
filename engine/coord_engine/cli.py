@@ -40,6 +40,10 @@ def _host() -> str:
     return os.environ.get("FULCRA_COORD_AGENT") or f"coord-reconcile:{socket.gethostname()}"
 
 
+def _human() -> str:
+    return os.environ.get("FULCRA_COORD_HUMAN") or "human"
+
+
 def _load_rows(transport: Any, team: str) -> list[dict[str, Any]]:
     raw = transport.read(rec.summaries_path(team))
     if not raw:
@@ -239,9 +243,12 @@ def _task_apply(args, transport, **kw) -> int:
 
 
 def cmd_task_block(args: argparse.Namespace, transport: Any) -> int:
-    kw = {"status": "blocked", "blocked_on": args.blocked_on}
+    if not args.blocked_on and not args.on_user:
+        print("task block failed: requires --blocked-on or --on-user", file=sys.stderr)
+        return 1
+    kw = {"status": "blocked", "blocked_on": args.on_user or args.blocked_on}
     if args.on_user:
-        kw["assignee"] = args.on_user
+        kw["assignee"] = _human()
         kw["add_tags"] = ["needs:human"]
     return _task_apply(args, transport, **kw)
 
@@ -255,7 +262,10 @@ def cmd_task_abandon(args: argparse.Namespace, transport: Any) -> int:
 
 
 def cmd_task_assign(args: argparse.Namespace, transport: Any) -> int:
-    return _task_apply(args, transport, assignee=args.assignee)
+    kw = {"assignee": args.assignee}
+    if args.assignee != _human():
+        kw["remove_tags"] = ["needs:human"]
+    return _task_apply(args, transport, **kw)
 
 
 def cmd_task_done(args: argparse.Namespace, transport: Any) -> int:
@@ -420,8 +430,8 @@ def build_parser() -> argparse.ArgumentParser:
     tdn.set_defaults(func=cmd_task_done)
     tbl = tksub.add_parser("block", help="mark blocked (sets blocked_on; --on-user routes to a human)")
     tbl.add_argument("team"); tbl.add_argument("name")
-    tbl.add_argument("--blocked-on", dest="blocked_on", required=True)
-    tbl.add_argument("--on-user", dest="on_user", help="assign to this human + tag needs:human")
+    tbl.add_argument("--blocked-on", dest="blocked_on")
+    tbl.add_argument("--on-user", dest="on_user", help="human-facing ask; assigns to FULCRA_COORD_HUMAN/human + tags needs:human")
     tbl.set_defaults(func=cmd_task_block, verb="block")
     tpa = tksub.add_parser("pause", help="pause to waiting (requires --next)")
     tpa.add_argument("team"); tpa.add_argument("name"); tpa.add_argument("--next", "-n", required=True)
