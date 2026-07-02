@@ -215,7 +215,7 @@ def cmd_task_update(args: argparse.Namespace, transport: Any) -> int:
         out = tasks.apply_update(
             transport.read(path), now=_iso(_now()), status=args.status, summary=args.summary,
             next_action=args.next, assignee=args.assignee, blocked_on=args.blocked_on,
-            priority=args.priority,
+            priority=args.priority, evidence=args.evidence,
         )
     except tasks.TaskError as e:
         print(f"task update failed: {e}", file=sys.stderr)
@@ -281,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     tup.add_argument("team"); tup.add_argument("name")
     tup.add_argument("--status"); tup.add_argument("--priority", "-p"); tup.add_argument("--assignee")
     tup.add_argument("--summary", "-s"); tup.add_argument("--next", "-n")
-    tup.add_argument("--blocked-on", dest="blocked_on")
+    tup.add_argument("--blocked-on", dest="blocked_on"); tup.add_argument("--evidence", "-e")
     tup.set_defaults(func=cmd_task_update)
     tdn = tksub.add_parser("done", help="mark done (requires evidence)")
     tdn.add_argument("team"); tdn.add_argument("name"); tdn.add_argument("--evidence", "-e", required=True)

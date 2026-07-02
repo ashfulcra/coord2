@@ -90,3 +90,13 @@ def test_mark_done_requires_evidence():
     fm = okf.parse_frontmatter(out)
     assert fm["status"] == "done"
     assert "evidence: PR #9 merged" in out
+
+
+def test_apply_update_done_without_evidence_rejected():
+    # the "done requires evidence" invariant must hold via the update path too,
+    # not only mark_done (regression guard for the merge-race that dropped it)
+    doc = tasks.new_task_doc("T", now=NOW, status="active")[1]
+    with pytest.raises(tasks.TaskError):
+        tasks.apply_update(doc, now=NOW, status="done")  # no evidence
+    ok = tasks.apply_update(doc, now=NOW, status="done", evidence="done it")
+    assert okf.parse_frontmatter(ok)["status"] == "done"
