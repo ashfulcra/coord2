@@ -73,17 +73,18 @@ def agents_digest(
 
     ros = {r["agent"]: r for r in roster(shards, now=now)}
     names = set(ros)
-    for row in rows:
+    open_rows = [r for r in rows if r.get("status") in OPEN_STATUSES]
+    for row in open_rows:
         for key in ("owner", "assignee"):
             v = row.get(key)
             if v and v != "*":
                 names.add(str(v))
     out: list[dict[str, Any]] = []
     for name in sorted(names):
-        open_rows = [r for r in rows if r.get("status") in OPEN_STATUSES
-                     and (r.get("owner") == name or r.get("assignee") == name)]
+        agent_open_rows = [r for r in open_rows
+                           if r.get("owner") == name or r.get("assignee") == name]
         counts: dict[str, int] = {}
-        for r in open_rows:
+        for r in agent_open_rows:
             counts[str(r.get("status"))] = counts.get(str(r.get("status")), 0) + 1
         pres = ros.get(name)
         out.append({

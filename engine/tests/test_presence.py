@@ -47,3 +47,15 @@ def test_agents_digest_unions_presence_and_task_parties():
     assert set(names) == {"amy", "bob"}
     assert names["amy"]["liveness"] == "live" and names["amy"]["open"] == {"active": 1, "blocked": 1}
     assert names["bob"]["liveness"] == "unknown" and names["bob"]["open"] == {"blocked": 1}
+
+
+def test_agents_digest_omits_terminal_only_task_parties_without_presence():
+    rows = [
+        {"status": "done", "owner": "old-owner", "assignee": "old-assignee"},
+        {"status": "abandoned", "owner": "gone", "assignee": None},
+        {"status": "active", "owner": "active-owner", "assignee": None},
+    ]
+    d = presence.agents_digest(rows, [], now=NOW)
+    names = {a["agent"]: a for a in d}
+    assert set(names) == {"active-owner"}
+    assert names["active-owner"]["open"] == {"active": 1}
