@@ -30,6 +30,16 @@ def test_render_frontmatter_roundtrips():
     assert "assignee" not in parsed  # None omitted
 
 
+def test_render_frontmatter_roundtrips_multiline_scalars_and_comma_lists():
+    fm = {
+        "type": "Task",
+        "description": "first line\nsecond line",
+        "next_action": "do one\ndo two",
+        "tags": ["workstream:web,api", "kind:bug"],
+    }
+    assert okf.parse_frontmatter(okf.render_frontmatter(fm)) == fm
+
+
 def test_new_task_doc():
     slug, content = tasks.new_task_doc(
         "Wire up L2", now=NOW, workstream="coord2", priority="P1",
