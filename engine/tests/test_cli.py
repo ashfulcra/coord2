@@ -640,3 +640,54 @@ def test_health_empty_fleet_reads_unhealthy(capsys):
     t = FakeTransport()
     assert cli.main(["health", "r"], transport=t) == 1     # cold-start must not read green
     assert "nobody has ever reconciled" in capsys.readouterr().out
+
+
+def test_cli_digest_sections_and_store_dedupe(capsys):
+    import json as _j
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Ask", "--status", "active"], transport=t)
+    cli.main(["task", "block", "r", "ask", "--on-user", "please review"], transport=t)
+    cli.main(["remind", "r", "amy", "2h", "Soon thing"], transport=t)
+    cli.main(["presence", "beat", "r", "-a", "amy", "-s", "working"], transport=t)
+    cli.main(["reconcile", "r"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["digest", "r", "--json"], transport=t) == 0
+    d = _j.loads(capsys.readouterr().out)
+    assert [r["name"] for r in d["blocked_on_you"]] == ["ask"]      # needs:human
+    assert [r["name"] for r in d["upcoming"]] == ["soon-thing"]     # not_before in 7d
+    assert any(a["agent"] == "amy" for a in d["per_agent"])
+    # --store persists once per day+window
+    cli.main(["digest", "r", "--store"], transport=t); capsys.readouterr()
+    stored = [p for p in t.store if p.startswith("team/r/_coord/digests/")]
+    assert len(stored) == 1
+    cli.main(["digest", "r", "--store"], transport=t)
+    assert "already stored" in capsys.readouterr().err
+
+
+def test_cli_escalate_vacant_role_once_per_day(capsys):
+    from coord_engine import okf
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md",
+          "---\ntype: Role\npolicy: shared\nsla_hours: 24\nmaintainer: ash\n---\n")
+    t.put("team/r/roles/reviewer/leases/ghost.md",
+          "---\ntype: Lease\nagent: ghost\ntimestamp: 2020-01-01T00:00:00Z\n---\n")
+    assert cli.main(["escalate", "r"], transport=t) == 0
+    out = capsys.readouterr().out
+    assert "escalated reviewer -> ash" in out
+    # marker + P1 directive to maintainer exist
+    assert any("escalations/" in p for p in t.store)
+    slug = [p for p in t.store if p.startswith("team/r/task/role-vacant")][0]
+    fm = okf.parse_frontmatter(t.store[slug])
+    assert fm["assignee"] == "ash" and fm["priority"] == "P1"
+    # second sweep same day: marker dedupes
+    assert cli.main(["escalate", "r"], transport=t) == 0
+    assert "0 escalated" in capsys.readouterr().out
+
+
+def test_cli_escalate_held_role_no_escalation(capsys):
+    t = FakeTransport()
+    t.put("team/r/roles/reviewer.md", "---\ntype: Role\nsla_hours: 24\n---\n")
+    cli.main(["roles", "claim", "r", "reviewer", "-a", "amy"], transport=t)
+    capsys.readouterr()
+    cli.main(["escalate", "r"], transport=t)
+    assert "0 escalated" in capsys.readouterr().out
