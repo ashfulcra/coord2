@@ -8,7 +8,7 @@ snapshots to the latest is code; the prose is when/whether to snapshot.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 SCHEMA = "coord.teams.continuity.v1"
@@ -56,9 +56,12 @@ def _parse_created_at(value: Any) -> Optional[datetime]:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def latest(snapshots: list[dict[str, Any]]) -> Optional[dict[str, Any]]:

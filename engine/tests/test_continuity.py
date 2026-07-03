@@ -62,3 +62,11 @@ def test_latest_ignores_malformed_created_at():
     corrupt = {"created_at": "not-a-date", "checkpoint_id": "CHK-x", "objective": "bad"}
     assert continuity.latest([good, corrupt])["objective"] == "good"
     assert continuity.latest([corrupt]) is None
+
+
+def test_latest_orders_mixed_timezone_timestamps():
+    aware = {"created_at": "2026-07-01T10:00:00Z", "checkpoint_id": "CHK-aware", "objective": "aware"}
+    naive = {"created_at": "2026-07-01T11:00:00", "checkpoint_id": "CHK-naive", "objective": "naive"}
+    offset = {"created_at": "2026-07-01T06:30:00-04:00", "checkpoint_id": "CHK-offset", "objective": "offset"}
+    assert continuity.latest([aware, naive])["objective"] == "naive"
+    assert continuity.latest([aware, offset])["objective"] == "offset"
