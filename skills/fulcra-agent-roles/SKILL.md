@@ -93,8 +93,11 @@ section. Claim the role's lease while you act as it. Know what each guard does a
   `claude-code:host:repo`): two FRESH lease shards (within `sla_hours`) → `roles status` reports
   **CONTESTED**. A stale stray shard yields HELD, not CONTESTED. Detected.
 - **Two sessions under the SAME id string**: they write the SAME lease shard (shard names derive from
-  the id), so leases alone CANNOT see this — last write silently wins. Until the engine grows a
-  session-nonce verify (task filed on the bus), the guard is procedural, in this order at the start
+  the id), so leases alone CANNOT see this — last write silently wins. Since the
+  session-nonce verify was shipped, the engine detects this automatically: every `roles claim`
+  writes a session nonce into the lease and compares on refresh — a foreign nonce prints a loud
+  stderr WARNING ("nonce mismatch ... same-id double-acting"), and claiming with no local state over
+  an existing shard prints a takeover note. Heed those. The manual fallback, in this order at the start
   of every work burst: (1) `roles status <team> <role> --json` — proceed only if VACANT or the sole
   holder is your id; (2) read your lease shard raw (`fulcra-api file download
   team/<team>/roles/<role>/leases/<agent-key>.md` — learn your `<agent-key>` by listing the leases
