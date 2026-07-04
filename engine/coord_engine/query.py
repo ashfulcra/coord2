@@ -52,6 +52,32 @@ def needs_me(
     return sort_rows(out)
 
 
+def asks(rows: list[dict[str, Any]], *, now: str, human: str = "human") -> list[dict[str, Any]]:
+    """Waiting-for-operator asks, OLDEST FIRST (age drives nagging): open rows
+    that are blocked-on-human — needs:human tag, or blocked with the human as
+    assignee, or blocked_on naming the human. Each row gains age_hours."""
+    from .roles import age_hours
+
+    out = []
+    for r in rows:
+        if r.get("status") not in OPEN_STATUSES:
+            continue
+        tags = r.get("tags") or []
+        hit = ("needs:human" in tags
+               or (r.get("status") == "blocked"
+                   and (r.get("assignee") == human
+                        or human in str(r.get("blocked_on") or "").replace(",", " ").split())))
+        if not hit:
+            continue
+        age = age_hours(r.get("timestamp"), now)
+        row = dict(r)
+        row["age_hours"] = None if age == float("inf") else round(age, 1)
+        out.append(row)
+    # unknown-age asks sort LAST deliberately (a malformed timestamp shouldn't
+    # outrank datable asks in the nag order; it still appears in every pull)
+    return sorted(out, key=lambda r: -(r.get("age_hours") if r.get("age_hours") is not None else -1.0))
+
+
 def search(rows: list[dict[str, Any]], q: str) -> list[dict[str, Any]]:
     """Substring match over id/title/description/tags (case-insensitive)."""
     ql = (q or "").lower().strip()

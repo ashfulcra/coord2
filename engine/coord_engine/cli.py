@@ -979,6 +979,40 @@ def cmd_migrate(args: argparse.Namespace, transport: Any) -> int:
     return 0
 
 
+# --- operator loop (fulcra-agent-operator): asks + answer ---
+
+def cmd_asks(args: argparse.Namespace, transport: Any) -> int:
+    rows = _load_rows(transport, args.team)
+    got = query.asks(rows, now=_iso(_now()), human=args.human or _human())
+    if args.json:
+        print(json.dumps(got, indent=2))
+        return 0
+    print(f"asks — {len(got)} waiting on {args.human or _human()} (oldest first)")
+    for r in got:
+        age = "?" if r.get("age_hours") is None else f"{r['age_hours']:g}h"
+        print(f"  [{age:>6}] [{r.get('priority')}] {r.get('title')}")
+        ask = str(r.get('blocked_on') or r.get('next_action') or '').strip()
+        if ask:
+            print(f"           ask: {ask[:140]}")
+        print(f"           slug: {r.get('name')}  owner: {r.get('owner')}")
+    return 0
+
+
+def cmd_answer(args: argparse.Namespace, transport: Any) -> int:
+    path = _task_path(args.team, args.name)
+    try:
+        doc, owner = tasks.apply_answer(transport.read(path), now=_iso(_now()),
+                                        answer=args.with_text, relayer=_host())
+    except tasks.TaskError as e:
+        print(f"answer failed: {e}", file=sys.stderr)
+        return 1
+    if not transport.write(path, doc):
+        print("answer failed: write did not land", file=sys.stderr)
+        return 1
+    print(f"answered {args.name} -> handed back to {owner} (unblocked; will surface in their inbox)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="coord-engine", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -1065,6 +1099,14 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doctor", help="local preflight: tooling + store reachability")
     dr.add_argument("team", nargs="?")
     dr.set_defaults(func=cmd_doctor)
+
+    ak = sub.add_parser("asks", help="waiting-for-operator asks, oldest first (orchestrator pull)")
+    ak.add_argument("team"); ak.add_argument("--human"); add_json(ak)
+    ak.set_defaults(func=cmd_asks)
+    aw = sub.add_parser("answer", help="operator return-leg: unblock + answer + hand back to owner")
+    aw.add_argument("team"); aw.add_argument("name")
+    aw.add_argument("--with", dest="with_text", required=True, help="the answer text")
+    aw.set_defaults(func=cmd_answer)
 
     bf = sub.add_parser("briefing", help="one-call session-start bundle (tolerates absent add-ons)")
     bf.add_argument("team"); bf.add_argument("--agent", "-a"); add_json(bf)
