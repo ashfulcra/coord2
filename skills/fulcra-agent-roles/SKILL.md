@@ -80,6 +80,22 @@ It reads the role's `policy`/`sla_hours`, folds the leases, and returns:
 
 For **CONTESTED**, resolve by having all but one holder release.
 
+### Role-as-identity (recommended)
+When a session exists to serve one role, use the role name AS its agent identity
+(`FULCRA_COORD_AGENT=coord-maintainer`) — see fulcra-agent-presence's "Pick your identity by ROLE"
+section. Claim the role's lease while you act as it. Know what each guard does and does not catch:
+
+- **Different ids claiming an exclusive role** (e.g. `coord-maintainer` and a stray
+  `claude-code:host:repo`): two lease shards → `roles status` reports **CONTESTED**. Detected.
+- **Two sessions under the SAME id string**: they write the SAME lease shard (shard names derive from
+  the id), so leases alone CANNOT see this — last write silently wins. The guard is procedural until
+  you adopt the nonce check: only adopt a role identity when `roles status` shows the role VACANT or
+  held by you, and re-claim (refresh) at the start of every work burst so a hijack at least shows up
+  as your own lease timestamp moving without you.
+
+Multi-host variants (`coord-maintainer@host`) are acceptable when one role legitimately runs in several
+places; the bare role name then belongs in the role doc's `maintainer:` field, not any session's id.
+
 ### Escalate a vacancy — engine decides, you act
 The engine already computed `escalation_due` above. When it is **true**, perform the single-file actions
 (these are reliable as prose):

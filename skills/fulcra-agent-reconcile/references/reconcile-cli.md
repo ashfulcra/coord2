@@ -30,7 +30,7 @@ uv tool run coord-engine search   <team> <query> [--json]  # substring over id/t
 
 ## Environment
 - `FULCRA_CLI_COMMAND` — override the storage CLI (default `fulcra-api`). E.g. `uv tool run fulcra-api`.
-- `FULCRA_COORD_AGENT` — identity recorded as `reconcile_host` in the aggregate (default `coord-reconcile:<hostname>`).
+- `FULCRA_COORD_AGENT` — identity recorded as `reconcile_host` in the aggregate (default `coord-reconcile:<hostname>`). Set it to the ROLE you act as, not a folder/host string — see fulcra-agent-presence "Pick your identity by ROLE".
 - `COORD_LOG_LEVEL` — `debug|info|warn|error` (structured JSON logs to stderr; default `info`).
 
 ## Behavior notes

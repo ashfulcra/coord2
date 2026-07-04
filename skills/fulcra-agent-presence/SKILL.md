@@ -36,3 +36,20 @@ uv tool run coord-engine roles release <team> <role> [--agent X]
 ```
 `--agent` defaults to `$FULCRA_COORD_AGENT` (or a derived host id). Stale shards are eventually pruned by
 the reconcile shard-GC; a stale agent reappears by simply beating again.
+
+## Pick your identity by ROLE, not by folder
+
+Set `FULCRA_COORD_AGENT` to the role you are acting as (`coord-maintainer`, `prefs-maintainer`,
+`release-reviewer`), not a host/cwd-derived string. Folder-derived ids collide the moment two sessions
+share a directory (shared inbox, clobbered presence, ambiguous acks) and rot when a hostname or checkout
+path changes; a role-based id survives both and is what teammates actually want to address. Two rules
+make it safe:
+
+1. **Claim the role's lease while you act as it** (`roles claim <team> <your-id>`; see
+   fulcra-agent-roles). An `exclusive` role turns two sessions accidentally acting under the same
+   identity into a visible CONTESTED state instead of a silent collision.
+2. **Session/host details are metadata, not address.** Put them in the presence `-s` summary or the
+   lease body if useful; never in the agent id.
+
+The derived host id remains only as a fallback for throwaway/anonymous sessions that never take
+assignments.
