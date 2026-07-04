@@ -781,7 +781,7 @@ def cmd_roles_claim(args: argparse.Namespace, transport: Any) -> int:
           "timestamp": _iso(_now())}
     transport.write(f"{_leases_prefix(args.team, args.role)}{slug}.md",
                     okf.render_frontmatter(fm) + f"\nHolding {args.role}.\n")
-    print(f"claimed {args.role} as {agent} (refresh by re-running)")
+    print(f"claimed {args.role} as {agent} ({slug}.md; refresh by re-running)")
     return 0
 
 
