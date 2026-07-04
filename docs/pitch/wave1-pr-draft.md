@@ -16,8 +16,11 @@ gh token is expired — Ash renews or pushes).*
    - Engine install line → pinned current release tag (v1.3.0 or later).
    - Verify cross-skill links only reference wave-1 siblings or fulcra-agent-teams; links to
      wave-2 skills (reconcile/tasks/operator) get "(optional companion, not yet upstream)" or drop.
-5. PII scan the copied tree (standing rule). Run each skill's reference commands once against a
-   scratch team.
+5. PII scan the copied tree (standing rule). Reference-command verification: DONE 2026-07-04 —
+   all six skills exercised end-to-end on a scratch team (presence beat/show, roles
+   claim/status/release incl. nonce echo, continuity snapshot/resume, review verdict fold,
+   directives tell→inbox, health doctor+fold); scratch team deleted after. Re-run only if skills
+   change between now and the copy.
 6. Open PR with the body below; dual review (opus + Codex) on OUR side before marking ready.
 
 ## PR title
