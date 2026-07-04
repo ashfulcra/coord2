@@ -1002,7 +1002,7 @@ def cmd_answer(args: argparse.Namespace, transport: Any) -> int:
     path = _task_path(args.team, args.name)
     try:
         doc, owner = tasks.apply_answer(transport.read(path), now=_iso(_now()),
-                                        answer=args.with_text)
+                                        answer=args.with_text, relayer=_host())
     except tasks.TaskError as e:
         print(f"answer failed: {e}", file=sys.stderr)
         return 1

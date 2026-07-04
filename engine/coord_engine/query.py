@@ -64,15 +64,18 @@ def asks(rows: list[dict[str, Any]], *, now: str, human: str = "human") -> list[
             continue
         tags = r.get("tags") or []
         hit = ("needs:human" in tags
-               or (r.get("status") == "blocked" and r.get("assignee") == human)
-               or human in str(r.get("blocked_on") or "").replace(",", " ").split())
+               or (r.get("status") == "blocked"
+                   and (r.get("assignee") == human
+                        or human in str(r.get("blocked_on") or "").replace(",", " ").split())))
         if not hit:
             continue
         age = age_hours(r.get("timestamp"), now)
         row = dict(r)
         row["age_hours"] = None if age == float("inf") else round(age, 1)
         out.append(row)
-    return sorted(out, key=lambda r: -(r.get("age_hours") if r.get("age_hours") is not None else -1))
+    # unknown-age asks sort LAST deliberately (a malformed timestamp shouldn't
+    # outrank datable asks in the nag order; it still appears in every pull)
+    return sorted(out, key=lambda r: -(r.get("age_hours") if r.get("age_hours") is not None else -1.0))
 
 
 def search(rows: list[dict[str, Any]], q: str) -> list[dict[str, Any]]:

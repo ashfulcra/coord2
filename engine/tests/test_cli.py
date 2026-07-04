@@ -884,3 +884,14 @@ def test_asks_oldest_first_ordering(capsys):
     cli.main(["asks", "r", "--json"], transport=t)
     got = _j.loads(capsys.readouterr().out)
     assert [g["name"] for g in got] == ["old-ask", "new-ask"]   # oldest first
+
+
+def test_asks_word_human_in_nonblocked_text_not_matched(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/task/notask.md",
+          "---\ntype: Task\ntitle: N\nstatus: active\nowner: a\nassignee: alice\n"
+          "blocked_on: waiting on human review board\ntimestamp: 2026-07-01T00:00:00Z\n---\n")
+    cli.main(["reconcile", "r"], transport=t); capsys.readouterr()
+    cli.main(["asks", "r", "--human", "human", "--json"], transport=t)
+    assert _j.loads(capsys.readouterr().out) == []   # word 'human' in free text != an ask

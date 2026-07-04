@@ -149,7 +149,8 @@ def apply_update(
     return okf.render_frontmatter(fm) + "\n\n" + tail.lstrip("\n")
 
 
-def apply_answer(existing: Optional[str], *, now: str, answer: str) -> tuple[str, str]:
+def apply_answer(existing: Optional[str], *, now: str, answer: str,
+                 relayer: Optional[str] = None) -> tuple[str, str]:
     """The operator return-leg (fulcra-agent-operator): validate the task is a
     waiting-for-operator ask, then in ONE write: record the answer, unblock
     (blocked -> active), hand the task back to its OWNER (so it lands in their
@@ -173,7 +174,7 @@ def apply_answer(existing: Optional[str], *, now: str, answer: str) -> tuple[str
         existing, now=now, status=status,
         next_action=f"OPERATOR ANSWER: {answer.strip()}",
         assignee=owner, blocked_on="", remove_tags=["needs:human"],
-        evidence=None,
+        evidence=(f"operator answer relayed by {relayer}" if relayer else None),
     )
     return doc, owner
 
