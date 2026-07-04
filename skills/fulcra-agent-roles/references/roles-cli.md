@@ -1,12 +1,13 @@
 ---
 name: fulcra-agent-roles-cli
-description: "Exact fulcra-api file commands for establishing roles, claiming/refreshing/releasing leases, and escalating vacancies."
+description: "Exact commands for establishing roles, claiming/refreshing/releasing leases (coord-engine verbs), and escalating vacancies (fulcra-api file)."
 ---
 
 # Fulcra Agent Roles — CLI reference
 
-All operations are `fulcra-api file` calls against the team namespace (needs `fulcra-api auth login`).
-Write markdown locally, then upload. Every upload is versioned by the Fulcra File Store.
+Lease operations (claim/refresh/release) are `coord-engine roles` verbs — the engine owns lease shard
+naming. Role establishment and escalation remain raw `fulcra-api file` calls against the team namespace
+(needs `fulcra-api auth login`). Every upload is versioned by the Fulcra File Store.
 
 ## Establish a role
 ```bash
@@ -18,10 +19,14 @@ uv tool run fulcra-api file upload /tmp/roles-index.md "team/<team>/roles/index.
 
 ## Claim / refresh a lease
 ```bash
-# leases/<your-agent>.md — type: Lease, timestamp = now (UTC). Re-run to REFRESH (new timestamp) each
-# time you act in the role; this is the liveness signal.
-uv tool run fulcra-api file upload /tmp/my-lease.md "team/<team>/roles/reviewer/leases/<your-agent>.md"
+# Re-run to REFRESH (new timestamp) each time you act in the role; this is the liveness signal.
+# Echoes the lease shard filename (slug + 6-char hash) — note it so you can inspect your exact
+# shard (e.g. raw-read it and check the timestamp is one you wrote) or delete it by hand if needed.
+uv tool run coord-engine roles claim <team> reviewer [--agent <your-id>]
 ```
+Never hand-write lease files: the engine names shards `<slug>-<hash6>.md` via `agent_key`, so a
+hand-named `leases/<your-agent>.md` creates a SECOND shard for the same id — spurious CONTESTED on
+exclusive roles.
 
 ## Read role status (the fold) — deterministic, via coord-engine
 Do NOT classify by eyeballing timestamps. The engine folds policy + lease freshness:
@@ -32,8 +37,10 @@ uv tool run coord-engine roles status "<team>" "reviewer" --json
 
 ## Release
 ```bash
-uv tool run fulcra-api file delete "team/<team>/roles/reviewer/leases/<your-agent>.md"
+uv tool run coord-engine roles release <team> reviewer [--agent <your-id>]
 ```
+(Deletes your engine-named shard. A raw `fulcra-api file delete` of a hand-guessed filename silently
+misses the real shard — the lease then goes stale instead of released.)
 
 ## Escalate a vacancy (at most once per day)
 ```bash

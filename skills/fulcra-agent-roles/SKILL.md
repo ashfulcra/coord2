@@ -13,7 +13,8 @@ Enhances the [`fulcra-agent-teams`](https://github.com/fulcradynamics/agent-skil
 `member/<agent>/role.md` says what a *member* does, but teams has no notion of a **durable role** that
 outlives any one session — "who is the reviewer right now?", "is anyone on-call?", "this role has been
 unattended too long." This skill adds that, as a pure OKF-markdown convention over the team namespace
-(no new tools — just `fulcra-api file` and the OKF standard).
+(lease mechanics via `coord-engine roles` verbs; everything else plain `fulcra-api file` + the OKF
+standard).
 
 ## Concepts
 - **Role** — a named, durable function in the team (e.g. `reviewer`, `maintainer`, `on-call`). Defined
@@ -39,8 +40,9 @@ unattended too long." This skill adds that, as a pure OKF-markdown convention ov
   # Duties
   - Pick up review requests from the team inbox…
   ```
-- **`roles/<name>/leases/<agent-name>.md`** — one lease per holder. OKF `type: Lease`. The
-  `timestamp` is the liveness signal — **refresh it** (re-upload) each time you act in the role:
+- **`roles/<name>/leases/<slug>-<hash6>.md`** — one lease per holder, named by the engine from the
+  holder's id (`agent_key`); never hand-name lease files. OKF `type: Lease`. The `timestamp` is the
+  liveness signal — **refresh it** (re-claim) each time you act in the role:
   ```yaml
   ---
   type: Lease
@@ -59,13 +61,15 @@ unattended too long." This skill adds that, as a pure OKF-markdown convention ov
 Write `roles/<name>.md` with `type: Role` + policy/SLA/maintainer, and list it in the team `roles/index.md`.
 
 ### Claim / hold
-Upload a lease `roles/<name>/leases/<your-agent-name>.md` with a current `timestamp`. **Refresh it**
-(re-upload with a new `timestamp`) whenever you do work in the role — this is what keeps the role "held".
-The Fulcra File Store versions every write, so the lease's history is an audit trail of your tenure.
+`uv tool run coord-engine roles claim <team> <name>` writes your lease shard (engine-named `<slug>-<hash6>.md`;
+the command echoes the filename). **Re-run it** whenever you do work in the role — the refreshed
+`timestamp` is what keeps the role "held". Never hand-upload a lease file: a hand-named shard makes a
+SECOND lease for your id (spurious CONTESTED on exclusive roles). The Fulcra File Store versions every
+write, so the lease's history is an audit trail of your tenure.
 
 ### Release
-Delete your lease file `roles/<name>/leases/<your-agent-name>.md`. (Delete is not undoable via the CLI,
-which is correct here — releasing is intentional.)
+`uv tool run coord-engine roles release <team> <name>` deletes your engine-named shard. (Deletion is intentional
+and not undoable — correct for releasing.)
 
 ### Determine role status (the fold) — **use the engine, do not eyeball timestamps**
 Classifying a role from many lease files is a *fold* over derived state: two agents must AGREE on
@@ -124,4 +128,4 @@ List roles in `roles/index.md`, but do **not** index every lease or escalation m
 `leases/` and `escalations/` directories as a whole. Keep the team `log.md` for role *creation* and
 *handoff* milestones, not every lease refresh.
 
-See [`references/roles-cli.md`](references/roles-cli.md) for exact `fulcra-api file` commands.
+See [`references/roles-cli.md`](references/roles-cli.md) for exact commands.

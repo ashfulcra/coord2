@@ -820,3 +820,11 @@ def test_health_json_uses_monitor_exit_code(capsys):
     assert cli.main(["health", "r", "--json"], transport=stale) == 1
     view = _j.loads(capsys.readouterr().out)
     assert view["healthy"] is False and view["total"] == 1
+
+
+def test_roles_claim_echoes_shard_filename(capsys):
+    from coord_engine.tasks import agent_key
+    t = FakeTransport()
+    assert cli.main(["roles", "claim", "r", "reviewer", "--agent", "coord-maintainer"], transport=t) == 0
+    out = capsys.readouterr().out
+    assert f"{agent_key('coord-maintainer')}.md" in out   # agents need their shard name to inspect/delete their exact shard
