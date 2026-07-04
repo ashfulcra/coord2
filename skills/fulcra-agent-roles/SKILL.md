@@ -93,13 +93,16 @@ section. Claim the role's lease while you act as it. Know what each guard does a
   session-nonce verify (task filed on the bus), the guard is procedural, in this order at the start
   of every work burst: (1) `roles status <team> <role> --json` — proceed only if VACANT or the sole
   holder is your id; (2) read your lease shard raw (`fulcra-api file download
-  team/<team>/roles/<role>/leases/<agent-key>.md`) and compare its `timestamp` to when YOU last
+  team/<team>/roles/<role>/leases/<agent-key>.md` — learn your `<agent-key>` by listing the leases
+  dir, or from `presence beat` output, which prints the same key) and compare its `timestamp` to when YOU last
   claimed — a fresher timestamp you did not write means another session is acting under your id;
   (3) only then re-claim to refresh. Re-claiming FIRST destroys that evidence.
 
 Multi-host variants (`coord-maintainer@host1`, `@host2`) are acceptable when one role legitimately
 runs in several places — each host claims the SAME role (`roles claim <team> coord-maintainer --agent
-coord-maintainer@host1`), never a role named after the variant. Keep the role doc's `maintainer:` field
+coord-maintainer@host1`), never a role named after the variant. Such a role needs `policy: shared`:
+on `exclusive` it would sit in permanent CONTESTED by construction — and note `shared` trades away
+the CONTESTED collision guard for that role. Keep the role doc's `maintainer:` field
 a distinct SUPERVISING identity (e.g. `maintainer: ash`): vacancy escalations are assigned to that
 field, so pointing it at the role itself mails the alert to the very inbox that just went dark.
 
