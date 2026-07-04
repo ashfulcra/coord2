@@ -61,14 +61,14 @@ standard).
 Write `roles/<name>.md` with `type: Role` + policy/SLA/maintainer, and list it in the team `roles/index.md`.
 
 ### Claim / hold
-`coord-engine roles claim <team> <name>` writes your lease shard (engine-named `<slug>-<hash6>.md`;
+`uv tool run coord-engine roles claim <team> <name>` writes your lease shard (engine-named `<slug>-<hash6>.md`;
 the command echoes the filename). **Re-run it** whenever you do work in the role — the refreshed
 `timestamp` is what keeps the role "held". Never hand-upload a lease file: a hand-named shard makes a
 SECOND lease for your id (spurious CONTESTED on exclusive roles). The Fulcra File Store versions every
 write, so the lease's history is an audit trail of your tenure.
 
 ### Release
-`coord-engine roles release <team> <name>` deletes your engine-named shard. (Deletion is intentional
+`uv tool run coord-engine roles release <team> <name>` deletes your engine-named shard. (Deletion is intentional
 and not undoable — correct for releasing.)
 
 ### Determine role status (the fold) — **use the engine, do not eyeball timestamps**
