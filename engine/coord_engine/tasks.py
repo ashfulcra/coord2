@@ -149,6 +149,35 @@ def apply_update(
     return okf.render_frontmatter(fm) + "\n\n" + tail.lstrip("\n")
 
 
+def apply_answer(existing: Optional[str], *, now: str, answer: str) -> tuple[str, str]:
+    """The operator return-leg (fulcra-agent-operator): validate the task is a
+    waiting-for-operator ask, then in ONE write: record the answer, unblock
+    (blocked -> active), hand the task back to its OWNER (so it lands in their
+    inbox and their listener fires), and strip the needs:human marker.
+    Returns (new_doc, owner). Raises TaskError on a non-ask or missing owner."""
+    if not answer or not answer.strip():
+        raise TaskError("answer requires text")
+    fm = okf.parse_frontmatter(existing)
+    if fm is None:
+        raise TaskError("task doc missing or has no parseable frontmatter")
+    tags = fm.get("tags") or []
+    if not isinstance(tags, list):
+        tags = [tags]
+    if fm.get("status") != "blocked" and "needs:human" not in tags:
+        raise TaskError("not a waiting-for-operator ask (not blocked and no needs:human tag)")
+    owner = str(fm.get("owner") or "").strip()
+    if not owner:
+        raise TaskError("ask has no owner to hand the answer back to")
+    status = "active" if fm.get("status") == "blocked" else None
+    doc = apply_update(
+        existing, now=now, status=status,
+        next_action=f"OPERATOR ANSWER: {answer.strip()}",
+        assignee=owner, blocked_on="", remove_tags=["needs:human"],
+        evidence=None,
+    )
+    return doc, owner
+
+
 def mark_done(existing: Optional[str], *, now: str, evidence: str) -> str:
     """Transition to ``done`` — thin wrapper; ``apply_update`` enforces evidence."""
     return apply_update(existing, now=now, status="done", evidence=evidence)

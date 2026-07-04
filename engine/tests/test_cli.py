@@ -828,3 +828,59 @@ def test_roles_claim_echoes_shard_filename(capsys):
     assert cli.main(["roles", "claim", "r", "reviewer", "--agent", "coord-maintainer"], transport=t) == 0
     out = capsys.readouterr().out
     assert f"{agent_key('coord-maintainer')}.md" in out   # agents need their shard name to inspect/delete their exact shard
+
+
+def test_operator_ask_answer_round_trip(capsys):
+    import json as _j
+    from coord_engine import okf
+    t = FakeTransport()
+    # agent hits a wall and asks the operator
+    cli.main(["task", "start", "r", "Deploy thing", "--status", "active"], transport=t)
+    import os
+    os.environ["FULCRA_COORD_HUMAN"] = "ash"
+    try:
+        cli.main(["task", "block", "r", "deploy-thing", "--on-user",
+                  "need prod credentials: use vault A or B?"], transport=t)
+        cli.main(["reconcile", "r"], transport=t)
+        capsys.readouterr()
+        # orchestrator pulls asks
+        assert cli.main(["asks", "r", "--human", "ash", "--json"], transport=t) == 0
+        got = _j.loads(capsys.readouterr().out)
+        assert len(got) == 1 and got[0]["name"] == "deploy-thing"
+        assert "vault A or B" in got[0]["blocked_on"]
+        assert got[0]["age_hours"] is not None
+        # operator answers -> one write: unblocked, handed back, marker stripped
+        assert cli.main(["answer", "r", "deploy-thing", "--with", "vault B, creds in 1P"], transport=t) == 0
+        fm = okf.parse_frontmatter(t.store["team/r/task/deploy-thing.md"])
+        assert fm["status"] == "active"
+        assert fm["next_action"].startswith("OPERATOR ANSWER: vault B")
+        assert "needs:human" not in (fm.get("tags") or [])
+        assert fm["assignee"] == fm["owner"]          # back in the owner's inbox
+        cli.main(["reconcile", "r"], transport=t); capsys.readouterr()
+        cli.main(["asks", "r", "--human", "ash", "--json"], transport=t)
+        assert _j.loads(capsys.readouterr().out) == []  # ask cleared
+    finally:
+        os.environ.pop("FULCRA_COORD_HUMAN", None)
+
+
+def test_answer_rejects_non_ask_and_empty(capsys):
+    t = FakeTransport()
+    cli.main(["task", "start", "r", "Normal", "--status", "active"], transport=t)
+    capsys.readouterr()
+    assert cli.main(["answer", "r", "normal", "--with", "hi"], transport=t) == 1
+    assert "not a waiting-for-operator ask" in capsys.readouterr().err
+
+
+def test_asks_oldest_first_ordering(capsys):
+    import json as _j
+    t = FakeTransport()
+    t.put("team/r/task/old-ask.md",
+          "---\ntype: Task\ntitle: Old\nstatus: blocked\nowner: a\ntags: [needs:human]\n"
+          "blocked_on: pick one\ntimestamp: 2026-07-01T00:00:00Z\n---\n")
+    t.put("team/r/task/new-ask.md",
+          "---\ntype: Task\ntitle: New\nstatus: blocked\nowner: b\ntags: [needs:human]\n"
+          "blocked_on: choose\ntimestamp: 2026-07-04T00:00:00Z\n---\n")
+    cli.main(["reconcile", "r"], transport=t); capsys.readouterr()
+    cli.main(["asks", "r", "--json"], transport=t)
+    got = _j.loads(capsys.readouterr().out)
+    assert [g["name"] for g in got] == ["old-ask", "new-ask"]   # oldest first
