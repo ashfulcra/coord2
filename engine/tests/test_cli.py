@@ -825,6 +825,6 @@ def test_health_json_uses_monitor_exit_code(capsys):
 def test_roles_claim_echoes_shard_filename(capsys):
     from coord_engine.tasks import agent_key
     t = FakeTransport()
-    cli.main(["roles", "claim", "r", "reviewer", "--agent", "coord-maintainer"], transport=t)
+    assert cli.main(["roles", "claim", "r", "reviewer", "--agent", "coord-maintainer"], transport=t) == 0
     out = capsys.readouterr().out
-    assert f"{agent_key('coord-maintainer')}.md" in out   # agents need their shard name for the raw-read hijack check
+    assert f"{agent_key('coord-maintainer')}.md" in out   # agents need their shard name to inspect/delete their exact shard
