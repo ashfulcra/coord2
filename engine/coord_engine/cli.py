@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
+import secrets
 import socket
 import sys
 from datetime import datetime, timezone
@@ -159,6 +161,15 @@ def _role_doc_path(team: str, role: str) -> str:
 
 def _leases_prefix(team: str, role: str) -> str:
     return f"team/{team}/roles/{role}/leases/"
+
+
+def _nonce_state_path(team: str, role: str, key: str) -> pathlib.Path:
+    base = pathlib.Path(os.environ.get("COORD_ENGINE_STATE_DIR")
+                        or pathlib.Path.home() / ".local" / "state" / "coord-engine")
+    # agent_key over the (team, role) pair keeps the filename injective — raw
+    # f"{team}-{role}" would collide ("a-b"/"c" vs "a"/"b-c"), the exact defect
+    # agent_key exists to prevent for agent ids.
+    return base / f"lease-nonce-{tasks.agent_key(f'{team}/{role}')}-{key}.txt"
 
 
 def _escalation_marker_path(team: str, role: str, date: str) -> str:
@@ -777,10 +788,34 @@ def cmd_agents(args: argparse.Namespace, transport: Any) -> int:
 def cmd_roles_claim(args: argparse.Namespace, transport: Any) -> int:
     agent = args.agent or _host()
     slug = tasks.agent_key(agent)
+    shard_path = f"{_leases_prefix(args.team, args.role)}{slug}.md"
+    state = _nonce_state_path(args.team, args.role, slug)
+    # Same-id double-acting check: leases can't distinguish two sessions sharing one
+    # id (same shard file), so compare the shard's nonce to the one THIS session wrote.
+    existing = okf.parse_frontmatter(transport.read(shard_path)) or {}
+    try:
+        stored = state.read_text().strip() if state.exists() else None
+    except OSError:
+        stored = None
+    shard_nonce = existing.get("nonce")  # absent for pre-nonce shards: overwrites by
+    # old-engine sessions are undetectable by design — nothing to compare against.
+    if stored and shard_nonce and shard_nonce != stored:
+        print(f"WARNING: nonce mismatch on {slug}.md — another session has been acting "
+              f"as {agent} since your last claim (same-id double-acting). Give each "
+              f"session its own FULCRA_COORD_AGENT identity, or stop one.", file=sys.stderr)
+    elif stored is None and shard_nonce:
+        print(f"note: taking over an existing lease shard for {agent} written by another "
+              f"session (no local nonce state to compare)", file=sys.stderr)
+    nonce = secrets.token_hex(8)
     fm = {"type": "Lease", "title": f"{args.role} lease — {agent}", "agent": agent,
-          "timestamp": _iso(_now())}
-    transport.write(f"{_leases_prefix(args.team, args.role)}{slug}.md",
-                    okf.render_frontmatter(fm) + f"\nHolding {args.role}.\n")
+          "timestamp": _iso(_now()), "nonce": nonce}
+    transport.write(shard_path, okf.render_frontmatter(fm) + f"\nHolding {args.role}.\n")
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(nonce + "\n")
+    except OSError as e:
+        print(f"note: could not persist nonce state (double-acting check disabled "
+              f"until it can be written): {e}", file=sys.stderr)
     print(f"claimed {args.role} as {agent} ({slug}.md; refresh by re-running)")
     return 0
 
@@ -789,10 +824,20 @@ def cmd_roles_release(args: argparse.Namespace, transport: Any) -> int:
     agent = args.agent or _host()
     slug = tasks.agent_key(agent)
     path = f"{_leases_prefix(args.team, args.role)}{slug}.md"
+    state = _nonce_state_path(args.team, args.role, slug)
     if transport.read(path) is None:
+        try:
+            state.unlink(missing_ok=True)
+        except OSError:
+            pass
         print(f"no lease for {agent} on {args.role}", file=sys.stderr)
         return 1
     ok = transport.delete(path) if hasattr(transport, "delete") else False
+    if ok:
+        try:
+            state.unlink(missing_ok=True)
+        except OSError:
+            pass
     print(f"released {args.role} ({agent})" if ok else f"release failed for {path}",
           file=sys.stdout if ok else sys.stderr)
     return 0 if ok else 1

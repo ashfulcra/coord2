@@ -895,3 +895,45 @@ def test_asks_word_human_in_nonblocked_text_not_matched(capsys):
     cli.main(["reconcile", "r"], transport=t); capsys.readouterr()
     cli.main(["asks", "r", "--human", "human", "--json"], transport=t)
     assert _j.loads(capsys.readouterr().out) == []   # word 'human' in free text != an ask
+
+
+def _claim(t, agent="coord-maintainer"):
+    return cli.main(["roles", "claim", "r", "reviewer", "--agent", agent], transport=t)
+
+
+def test_roles_claim_writes_nonce_and_no_warning_on_own_refresh(capsys, tmp_path, monkeypatch):
+    from coord_engine import okf
+    from coord_engine.tasks import agent_key
+    monkeypatch.setenv("COORD_ENGINE_STATE_DIR", str(tmp_path))
+    t = FakeTransport()
+    assert _claim(t) == 0
+    shard = t.read(f"team/r/roles/reviewer/leases/{agent_key('coord-maintainer')}.md")
+    fm = okf.parse_frontmatter(shard)
+    assert fm.get("nonce")                      # lease carries a session nonce
+    assert _claim(t) == 0                       # own refresh: stored nonce matches shard
+    assert "nonce mismatch" not in capsys.readouterr().err
+
+
+def test_roles_claim_warns_on_foreign_nonce(capsys, tmp_path, monkeypatch):
+    from coord_engine import okf
+    from coord_engine.tasks import agent_key
+    monkeypatch.setenv("COORD_ENGINE_STATE_DIR", str(tmp_path))
+    t = FakeTransport()
+    assert _claim(t) == 0
+    capsys.readouterr()
+    # simulate a second session under the SAME id: rewrite the shard with a different nonce
+    path = f"team/r/roles/reviewer/leases/{agent_key('coord-maintainer')}.md"
+    fm = okf.parse_frontmatter(t.read(path))
+    fm["nonce"] = "f" * 16
+    t.put(path, okf.render_frontmatter(fm) + "\nHolding reviewer.\n")
+    assert _claim(t) == 0                       # still claims (never-raise), but loudly
+    assert "nonce mismatch" in capsys.readouterr().err
+
+
+def test_roles_release_clears_nonce_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("COORD_ENGINE_STATE_DIR", str(tmp_path))
+    t = FakeTransport()
+    assert _claim(t) == 0
+    assert list(tmp_path.iterdir())             # state file exists
+    assert cli.main(["roles", "release", "r", "reviewer", "--agent", "coord-maintainer"], transport=t) == 0
+    assert not list(tmp_path.iterdir())         # state cleaned up
