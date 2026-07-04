@@ -33,7 +33,9 @@ done, abandoned → (terminal)
 `done` requires evidence. A same-status update is always allowed (idempotent edit).
 
 ## Usage
-Needs `fulcra-api` authenticated and `coord-engine` installed (see `fulcra-agent-reconcile`).
+Needs `fulcra-api` authenticated and `coord-engine` installed — standalone:
+`uv tool install "git+https://github.com/ashfulcra/coord2.git@<latest-tag>#subdirectory=engine"` (any
+coord2 skill brings the same engine; installing once serves all).
 ```bash
 # create a task doc at team/<team>/task/<slug>.md
 uv tool run coord-engine task start <team> "Fix the widget" \
