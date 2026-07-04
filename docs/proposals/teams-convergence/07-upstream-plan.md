@@ -102,3 +102,17 @@ Each has a concrete incident/measurement behind it from this build:
    PR (the repo moves weekly — A1 falsified in 3 days).
 4. **Ops note**: verifying A10 required upgrading this host to fulcra-api 0.1.35 mid-pass; regression
    check confirmed `file` output shape unchanged (coord2 parsers + 0.15.17 matcher unaffected).
+
+---
+
+## Adversarial review (Codex, 2026-07-04) — carry-forward risks
+
+Verdict: APPROVE, no false premises (fresh clone re-verified A1/A3/A4/A9-class claims at review time).
+Three non-blocking risks to carry into execution:
+1. **Track-2 sizing is not "mechanical" for Fulcra**: the fold into fulcra-api replaces the
+   subprocess/text transport with internal APIs — keep explicit sizing for the API team in the pitch.
+2. **Reconcile pitch must lead with deterministic derived views**, not change detection — upstream
+   teams already ships `data-updates`, so "we notice changes" is table stakes; "two agents always agree
+   on the fold" is the differentiator.
+3. **Run the documented drift re-check immediately before EACH upstream PR** — open upstream PRs
+   (#107/#108 at review time) are old but alive; the repo moves weekly.
