@@ -1,3 +1,9 @@
+# MOVED — canonical home is now [ashfulcra/fulcra-tools](https://github.com/ashfulcra/fulcra-tools)
+
+> coord2 relocated 2026-07-04 (fulcra-tools PR #287, full history preserved): engine → `packages/coord-engine`
+> (releases tagged `coord-engine-vX.Y.Z` there; v1.3.0 was the last tag here), skills → `skills/`,
+> docs → `docs/coord2*`. This repo is retained as provenance for the pre-move review lineage.
+
 # coord2
 
 **Agent coordination as optional layers on top of [`fulcra-agent-teams`](https://github.com/fulcradynamics/agent-skills).**
