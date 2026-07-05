@@ -150,7 +150,7 @@ def apply_update(
 
 
 def apply_answer(existing: Optional[str], *, now: str, answer: str,
-                 relayer: Optional[str] = None) -> tuple[str, str]:
+                 relayer: Optional[str] = None, human: str = "human") -> tuple[str, str]:
     """The operator return-leg (fulcra-agent-operator): validate the task is a
     waiting-for-operator ask, then in ONE write: record the answer, unblock
     (blocked -> active), hand the task back to its OWNER (so it lands in their
@@ -168,7 +168,7 @@ def apply_answer(existing: Optional[str], *, now: str, answer: str,
     is_operator_ask = (
         "needs:human" in tags
         or (fm.get("status") == "blocked"
-            and (fm.get("assignee") == "human" or "human" in blocked_on))
+            and (fm.get("assignee") == human or human in blocked_on))
     )
     if not is_operator_ask:
         raise TaskError("not a waiting-for-operator ask")
