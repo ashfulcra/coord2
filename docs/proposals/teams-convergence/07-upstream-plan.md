@@ -111,7 +111,7 @@ source modules and expose the bundle as the packaging surface.
 
 ## Risks / open questions (inputs to the debugging pass)
 - Upstream conventions may have MOVED since the 2026-07-01 clone (repo is an active alpha).
-- Engine-fold (option 1) rewrites the transport layer — scope unknown until their API team weighs in.
+- Fulcra-api fold (option 3) rewrites the transport layer — scope unknown until their API team weighs in.
 - The teams-amendment (engine-owned index) is the one semantic change Fulcra could reject; wave 1 is
   deliberately independent of it.
 - `npx skills add ashfulcra/coord2` compatibility assumed, never tested.
