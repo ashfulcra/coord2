@@ -164,8 +164,14 @@ def apply_answer(existing: Optional[str], *, now: str, answer: str,
     tags = fm.get("tags") or []
     if not isinstance(tags, list):
         tags = [tags]
-    if fm.get("status") != "blocked" and "needs:human" not in tags:
-        raise TaskError("not a waiting-for-operator ask (not blocked and no needs:human tag)")
+    blocked_on = str(fm.get("blocked_on") or "").replace(",", " ").split()
+    is_operator_ask = (
+        "needs:human" in tags
+        or (fm.get("status") == "blocked"
+            and (fm.get("assignee") == "human" or "human" in blocked_on))
+    )
+    if not is_operator_ask:
+        raise TaskError("not a waiting-for-operator ask")
     owner = str(fm.get("owner") or "").strip()
     if not owner:
         raise TaskError("ask has no owner to hand the answer back to")
